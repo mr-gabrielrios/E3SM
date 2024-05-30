@@ -965,8 +965,12 @@
 					possible_values="Any positive real number."
 		/>
 		<nml_option name="config_frazil_sea_ice_reference_salinity" type="real" default_value="4.0" units="1.e-3"
-					description="assumed salinity of frazil ice in the open ocean. Land ice frazil salinity is always 0."
+					description="assumed salinity of frazil ice in the open ocean."
 					possible_values="Any positive real number."
+		/>
+		<nml_option name="config_frazil_land_ice_reference_salinity" type="real" default_value="0.0" units="1.e-3"
+					description="assumed salinity of frazil ice under land ice."
+					possible_values="Any non-negative real number."
 		/>
 		<nml_option name="config_frazil_maximum_freezing_temperature" type="real" default_value="0.0" units="C"
 			description="Maximum freezing temperature for the creation of frazil"
@@ -1018,6 +1022,10 @@
 					description="The constant heat transport velocity through the boundary layer under land ice used in the ISOMIP test cases."
 					possible_values="Any positive real number"
 		/>
+		<nml_option name="config_land_ice_flux_rms_tidal_velocity" type="real" default_value="5e-2" units="m s^-1"
+					description="Parameterization of tidal velocity used in computing the sub-ice-shelf friction velocity"
+					possible_values="Any non-negative real number"
+		/>
 		<nml_option name="config_land_ice_flux_jenkins_heat_transfer_coefficient" type="real" default_value="0.011"
 					description="constant nondimensional heat transfer coefficient across the ice-ocean boundary layer"
 					possible_values="Any positive real number"
@@ -1025,18 +1033,6 @@
 		<nml_option name="config_land_ice_flux_jenkins_salt_transfer_coefficient" type="real" default_value="3.1e-4"
 					description="constant nondimensional salt transfer coefficient across the ice-ocean boundary layer"
 					possible_values="Any positive real number"
-		/>
-		<nml_option name="config_land_ice_flux_tidal_Jourdain_alpha" type="real" default_value="1"
-					description="alpha from parameterization of tidal velocity by Jourdain et al., 2019 - Equation 9, alpha = 0.777 when TMIX compset on"
-					possible_values="Any non-negative real number"
-		/>
-		<nml_option name="config_land_ice_flux_tidal_Jourdain_A0" type="real" default_value="0"
-					description="A0 from parameterization of tidal velocity by Jourdain et al., 2019 - Equation 9, A0 = 0.656 when TMIX compset on"
-					possible_values="Any non-negative real number"
-		/>
-		<nml_option name="config_land_ice_flux_tidal_Jourdain_U0" type="real" default_value="5e-2" units="m s^-1"
-					description="U0 from parameterization of tidal velocity by Jourdain et al., 2019 - Equation 9, U0 = 0.003 m/s when TMIX compset on"
-					possible_values="Any non-negative real number"
 		/>
 	</nml_record>
 
@@ -2242,7 +2238,6 @@
 			<var_array name="landIceInterfaceTracers"/>
 			<var_array name="landIceBoundaryLayerTracers"/>
 			<var name="landIceFrictionVelocity"/>
-			<var name="velocityTidalRMS"/>
 			<var name="topDragMagnitude"/>
 			<var name="landIceFreshwaterFlux"/>
 			<var name="landIceHeatFlux"/>
@@ -2510,10 +2505,10 @@
 			 description="Reconstruction weights associated with each of the edgesOnEdge, used to reconstruct the tangentialVelocity from normalVelocities on neighboring edges."
 		/>
 		<var name="dvEdge" type="real" dimensions="nEdges" units="m"
-			 description="The distance (great circle distance for spherical meshes, Euclidean distance for planar meshes) between the two vertices (defined by verticesOnEdge) located at the endpoints of a given edge. It is the length of the edge on the primal mesh."
+			 description="Length of each edge, computed as the distance between verticesOnEdge."
 		/>
 		<var name="dcEdge" type="real" dimensions="nEdges" units="m"
-			 description="The distance (great circle distance for spherical meshes, Euclidean distance for planar meshes) between the centers of the two cells (defined by cellsOnEdge) neighboring a given edge. It is the length of the edge on the dual mesh."
+			 description="Length of each edge, computed as the distance between cellsOnEdge."
 		/>
 		<var name="angleEdge" type="real" dimensions="nEdges" units="radians"
 			 description="Angle the edge normal makes with local eastward direction."
@@ -3378,10 +3373,6 @@
 		<!-- diagnostic fields for land-ice fluxes -->
 		<var name="landIceFrictionVelocity" type="real" dimensions="nCells Time" units="m s^-1"
 			description="The friction velocity $u_*$ under land ice"
-			packages="landIceFluxesPKG"
-		/>
-		<var name="velocityTidalRMS" type="real" dimensions="nCells" units="m s^-1"
-			description="Root mean square tidal velocity from tidal model for drag and melt parametrizations"
 			packages="landIceFluxesPKG"
 		/>
 		<var name="topDrag" type="real" dimensions="nEdges Time" units="N m^-2"

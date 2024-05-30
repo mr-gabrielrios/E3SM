@@ -61,6 +61,8 @@ def buildnml(case, caseroot, compname):
 
     if not os.path.isdir(eamconf_dir): os.mkdir(eamconf_dir)
 
+    # GR (2024-05-24): force gustiness to be True
+    atm_gustiness = True
     # Coupler and surface components now required to accept gustiness when EAM
     # is used as the atmosphere model, unless SCREAM physics is used.
     if not (atm_gustiness or "-DSCREAM" in cam_config_opts):
