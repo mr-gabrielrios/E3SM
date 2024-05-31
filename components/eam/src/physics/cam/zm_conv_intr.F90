@@ -204,6 +204,9 @@ subroutine zm_conv_init(pref_edge)
 ! Register fields with the output buffer
 !
     call addfld ('ZMMSETRANS',(/ 'lev' /), 'A','J/m2/s','ZM transport of MSE')
+    call addfld ('ZMMSEU',(/ 'lev' /), 'A','J/kg','ZM updraft MSE')
+    call addfld ('ZMMSED',(/ 'lev' /), 'A','J/kg','ZM downdraft MSE')
+    call addfld ('ZMMSE',(/ 'lev' /), 'A','J/kg','ZM downdraft MSE')
 
     call addfld ('PRECZ',horiz_only,    'A','m/s','total precipitation from ZM convection')
     call addfld ('ZMDT',(/ 'lev' /), 'A','K/s','T tendency - Zhang-McFarlane moist convection')
@@ -670,6 +673,9 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8), intent(out) :: rice(pcols) ! reserved ice (not yet in cldice) for energy integrals
    real(r8), intent(out):: mu(pcols,pver) 
    real(r8) :: msetrans(pcols,pver) 
+   real(r8) :: mseu(pcols,pver) 
+   real(r8) :: msed(pcols,pver) 
+   real(r8) :: hmn(pcols,pver) 
    real(r8), intent(out):: eu(pcols,pver) 
    real(r8), intent(out):: du(pcols,pver) 
    real(r8), intent(out):: md(pcols,pver) 
@@ -754,6 +760,9 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8) :: mu_out(pcols,pver)
    real(r8) :: md_out(pcols,pver)
    real(r8) :: msetrans_out(pcols,pver)
+   real(r8) :: mseu_out(pcols,pver)
+   real(r8) :: msed_out(pcols,pver)
+   real(r8) :: hmn_out(pcols,pver)
 
 
    ! used in momentum transport calculation
@@ -912,6 +921,10 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    mu_out(:,:) = 0._r8
    md_out(:,:) = 0._r8
    msetrans_out(:,:) = 0._r8
+   mseu_out(:,:) = 0._r8
+   msed_out(:,:) = 0._r8
+   hmn_out(:,:) = 0._r8
+   dlftot(:,:) = 0._r8
    dlftot(:,:) = 0._r8
    wind_tends(:ncol,:pver,:) = 0.0_r8
 
@@ -1012,7 +1025,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
                     lengath ,ql      ,rliq  ,landfrac,  &
                     t_star, q_star, dcape, &  
                     aero(lchnk), qi, dif, dnlf, dnif, dsf, dnsf, sprd, rice, frz, mudpcu, &
-                    lambdadpcu,  microp_st, wuc, msetrans)
+                    lambdadpcu,  microp_st, wuc, msetrans, mseu, msed, hmn)
 
    if (zm_microp) then
      dlftot(:ncol,:pver) = dlf(:ncol,:pver) + dif(:ncol,:pver) + dsf(:ncol,:pver)
@@ -1183,10 +1196,16 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
          mu_out(ii,k) = mu(i,k) * 100._r8/gravit
          md_out(ii,k) = md(i,k) * 100._r8/gravit
          msetrans_out(ii,k) = msetrans(i,k) * 100._r8/gravit
+         mseu_out(ii,k) = mseu(i,k)
+         msed_out(ii,k) = msed(i,k)
+         hmn_out(ii,k) = hmn(i,k)
       end do
    end do
 
    call outfld('ZMMSETRANS', msetrans_out,      pcols, lchnk)
+   call outfld('ZMMSEU', mseu_out,      pcols, lchnk)
+   call outfld('ZMMSED', msed_out,      pcols, lchnk)
+   call outfld('ZMMSE', hmn_out,      pcols, lchnk)
 
    if(convproc_do_aer .or. convproc_do_gas) then 
       call outfld('ZMMU', mu_out,      pcols, lchnk)

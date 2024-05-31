@@ -331,7 +331,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
                     aero    ,qi      ,dif     ,dnlf    ,dnif    , & 
                     dsf     ,dnsf    ,sprd    ,rice    ,frz     , &
                     mudpcu  ,lambdadpcu, microp_st, wuc, &
-                    msetrans)
+                    msetrans, hu, hd, hmn)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -502,6 +502,9 @@ subroutine zm_convr(lchnk   ,ncol    , &
 ! move these vars from local storage to output so that convective
 ! transports can be done in outside of conv_cam.
    real(r8), intent(out) :: msetrans(pcols,pver)
+   real(r8), intent(out) :: hu(pcols,pver)       ! updraft MSE
+   real(r8), intent(out) :: hd(pcols,pver)       ! downdraft MSE
+   real(r8), intent(out) :: hmn(pcols,pver)       ! downdraft MSE
    real(r8), intent(out) :: mu(pcols,pver)
    real(r8), intent(out) :: eu(pcols,pver)
    real(r8), intent(out) :: du(pcols,pver)
@@ -606,7 +609,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8) su(pcols,pver)             ! wg grid slice of dry static energy in updraft.
    real(r8) qs(pcols,pver)             ! wg grid slice of saturation mixing ratio.
    real(r8) shat(pcols,pver)           ! wg grid slice of upper interface dry static energy.
-   real(r8) hmn(pcols,pver)            ! wg moist static energy.
+   ! real(r8) hmn(pcols,pver)            ! wg moist static energy.
    real(r8) hsat(pcols,pver)           ! wg saturated moist static energy.
    real(r8) qlg(pcols,pver)
    real(r8) dudt(pcols,pver)           ! wg u-wind tendency at gathered points.
@@ -1009,7 +1012,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
                landfracg, tpertg, &  
                aero    ,qhat ,lambdadpcug,mudpcug ,sprdg   ,frzg ,  &
                qldeg   ,qideg   ,qsdeg   ,ncdeg   ,nideg   ,nsdeg,  &
-               dsfmg   ,dsfng   ,loc_microp_st, msetrans )   
+               dsfmg   ,dsfng   ,loc_microp_st, msetrans, hu, hd )   
 
 
 !
@@ -1076,20 +1079,22 @@ subroutine zm_convr(lchnk   ,ncol    , &
 
    do k=msg+1,pver
       do i=1,lengath
-         mu   (i,k)  = mu   (i,k)*mb(i)
-         md   (i,k)  = md   (i,k)*mb(i)
-         mc   (i,k)  = mc   (i,k)*mb(i)
-         du   (i,k)  = du   (i,k)*mb(i)
-         eu   (i,k)  = eu   (i,k)*mb(i)
-         ed   (i,k)  = ed   (i,k)*mb(i)
-         cmeg (i,k)  = cmeg (i,k)*mb(i)
-         rprdg(i,k)  = rprdg(i,k)*mb(i)
-         cug  (i,k)  = cug  (i,k)*mb(i)
-         evpg (i,k)  = evpg (i,k)*mb(i)
-         pflxg(i,k+1)= pflxg(i,k+1)*mb(i)*100._r8/grav
-         sprdg(i,k)  = sprdg(i,k)*mb(i)
-         frzg(i,k)   = frzg(i,k)*mb(i)
+         mu   (i,k)     = mu   (i,k)*mb(i)
+         md   (i,k)     = md   (i,k)*mb(i)
+         mc   (i,k)     = mc   (i,k)*mb(i)
+         du   (i,k)     = du   (i,k)*mb(i)
+         eu   (i,k)     = eu   (i,k)*mb(i)
+         ed   (i,k)     = ed   (i,k)*mb(i)
+         cmeg (i,k)     = cmeg (i,k)*mb(i)
+         rprdg(i,k)     = rprdg(i,k)*mb(i)
+         cug  (i,k)     = cug  (i,k)*mb(i)
+         evpg (i,k)     = evpg (i,k)*mb(i)
+         pflxg(i,k+1)   = pflxg(i,k+1)*mb(i)*100._r8/grav
+         sprdg(i,k)     = sprdg(i,k)*mb(i)
+         frzg(i,k)      = frzg(i,k)*mb(i)
          msetrans(i,k)  = msetrans   (i,k)*mb(i)
+         hu(i,k)        = hu(i,k)*mb(i)
+         hd(i,k)        = hd(i,k)*mb(i)
 
          if ( zm_microp .and. mb(i).eq.0._r8) then
             qlg (i,k) = 0._r8
@@ -2748,7 +2753,7 @@ subroutine cldprp(lchnk   , &
                   landfrac,tpertg  , &
                   aero    ,qhat ,lambdadpcu ,mudpcu  ,sprd   ,frz1 , &
                   qcde    ,qide   ,qsde     ,ncde    ,nide   ,nsde , &
-                  dsfm    ,dsfn   ,loc_microp_st, msetrans)
+                  dsfm    ,dsfn   ,loc_microp_st, msetrans, hu, hd)
 
 !----------------------------------------------------------------------- 
 ! 
@@ -2818,7 +2823,9 @@ subroutine cldprp(lchnk   , &
    real(r8), intent(out) :: hsat(pcols,pver)     ! sat moist stat energy of env
    real(r8), intent(out) :: mc(pcols,pver)       ! net mass flux
    real(r8), intent(out) :: md(pcols,pver)       ! downdraft mass flux
-   real(r8), intent(out) :: msetrans(pcols,pver)
+   real(r8), intent(out) :: msetrans(pcols,pver) ! vertical MSE transport
+   real(r8), intent(out) :: hu(pcols,pver)       ! updraft MSE
+   real(r8), intent(out) :: hd(pcols,pver)       ! downdraft MSE
    real(r8), intent(out) :: mu(pcols,pver)       ! updraft mass flux
    real(r8), intent(out) :: pflx(pcols,pverp)    ! precipitation flux thru layer
    real(r8), intent(out) :: qd(pcols,pver)       ! spec humidity of downdraft
@@ -2857,8 +2864,8 @@ subroutine cldprp(lchnk   , &
    real(r8) gamma(pcols,pver)
    real(r8) dz(pcols,pver)
    real(r8) iprm(pcols,pver)
-   real(r8) hu(pcols,pver)
-   real(r8) hd(pcols,pver)
+   ! real(r8) hu(pcols,pver)
+   ! real(r8) hd(pcols,pver)
    real(r8) eps(pcols,pver)
    real(r8) f(pcols,pver)
    real(r8) k1(pcols,pver)
