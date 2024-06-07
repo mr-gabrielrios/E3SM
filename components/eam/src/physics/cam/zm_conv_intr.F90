@@ -203,10 +203,14 @@ subroutine zm_conv_init(pref_edge)
 ! 
 ! Register fields with the output buffer
 !
+    ! GR: add field definitions for output diagnostics 
     call addfld ('ZMMSETRANS',(/ 'lev' /), 'A','J/m2/s','ZM transport of MSE')
+    call addfld ('ZMMSE',(/ 'lev' /), 'A','J/kg','ZM MSE')
     call addfld ('ZMMSEU',(/ 'lev' /), 'A','J/kg','ZM updraft MSE')
     call addfld ('ZMMSED',(/ 'lev' /), 'A','J/kg','ZM downdraft MSE')
-    call addfld ('ZMMSE',(/ 'lev' /), 'A','J/kg','ZM downdraft MSE')
+    call addfld ('MSE',(/ 'lev' /), 'A','J/kg','dycore-derived MSE')
+    call addfld ('ZM_T',(/ 'lev' /), 'A','K','ZM temperature')
+    call addfld ('ZM_Q',(/ 'lev' /), 'A','kg/kg','ZM specific humidity')
 
     call addfld ('PRECZ',horiz_only,    'A','m/s','total precipitation from ZM convection')
     call addfld ('ZMDT',(/ 'lev' /), 'A','K/s','T tendency - Zhang-McFarlane moist convection')
@@ -672,10 +676,12 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8), intent(out) :: rliq(pcols) ! reserved liquid (not yet in cldliq) for energy integrals
    real(r8), intent(out) :: rice(pcols) ! reserved ice (not yet in cldice) for energy integrals
    real(r8), intent(out):: mu(pcols,pver) 
-   real(r8) :: msetrans(pcols,pver) 
-   real(r8) :: mseu(pcols,pver) 
-   real(r8) :: msed(pcols,pver) 
-   real(r8) :: hmn(pcols,pver) 
+   real(r8) :: msetrans(pcols,pver)            ! MSE vertical transport 
+   real(r8) :: msemn(pcols,pver)               ! Domain MSE
+   real(r8) :: mseu(pcols,pver)                ! Updraft MSE
+   real(r8) :: msed(pcols,pver)                ! Downdraft MSE 
+   real(r8) :: zm_t(pcols,pver)                ! Temperature used in ZM scheme
+   real(r8) :: zm_q(pcols,pver)                ! Specific humidity used in ZM scheme
    real(r8), intent(out):: eu(pcols,pver) 
    real(r8), intent(out):: du(pcols,pver) 
    real(r8), intent(out):: md(pcols,pver) 
@@ -759,10 +765,12 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8) :: cape(pcols)        ! w  convective available potential energy.
    real(r8) :: mu_out(pcols,pver)
    real(r8) :: md_out(pcols,pver)
-   real(r8) :: msetrans_out(pcols,pver)
-   real(r8) :: mseu_out(pcols,pver)
-   real(r8) :: msed_out(pcols,pver)
-   real(r8) :: hmn_out(pcols,pver)
+   real(r8) :: msetrans_out(pcols,pver) ! Output array for vertical MSE transport
+   real(r8) :: msezm_out(pcols,pver)    ! Output array for ZM MSE
+   real(r8) :: mse_out(pcols,pver)      ! Output array for derived MSE
+   real(r8) :: mseu_out(pcols,pver)     ! Output array for updraft MSE
+   real(r8) :: msed_out(pcols,pver)     ! Output array for downdraft MSE
+   real(r8) :: elev(pcols,pver)         ! Height
 
 
    ! used in momentum transport calculation
@@ -921,9 +929,10 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    mu_out(:,:) = 0._r8
    md_out(:,:) = 0._r8
    msetrans_out(:,:) = 0._r8
+   msezm_out(:,:) = 0._r8
+   mse_out(:,:) = 0._r8
    mseu_out(:,:) = 0._r8
    msed_out(:,:) = 0._r8
-   hmn_out(:,:) = 0._r8
    dlftot(:,:) = 0._r8
    dlftot(:,:) = 0._r8
    wind_tends(:ncol,:pver,:) = 0.0_r8
@@ -1025,7 +1034,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
                     lengath ,ql      ,rliq  ,landfrac,  &
                     t_star, q_star, dcape, &  
                     aero(lchnk), qi, dif, dnlf, dnif, dsf, dnsf, sprd, rice, frz, mudpcu, &
-                    lambdadpcu,  microp_st, wuc, msetrans, mseu, msed, hmn)
+                    lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed)
 
    if (zm_microp) then
      dlftot(:ncol,:pver) = dlf(:ncol,:pver) + dif(:ncol,:pver) + dsf(:ncol,:pver)
@@ -1196,16 +1205,29 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
          mu_out(ii,k) = mu(i,k) * 100._r8/gravit
          md_out(ii,k) = md(i,k) * 100._r8/gravit
          msetrans_out(ii,k) = msetrans(i,k) * 100._r8/gravit
-         mseu_out(ii,k) = mseu(i,k)
-         msed_out(ii,k) = msed(i,k)
-         hmn_out(ii,k) = hmn(i,k)
+         ! Get MSE from ZM output state variables 
+         msezm_out(ii, k) = cpair*state%t(ii, k) + 2500000*state%q(ii, k, 1) + gravit*elev(ii,k)
       end do
    end do
 
+   do i=1,ncol
+      do k=1,pver
+         mseu_out(i,k) = mseu(i,k)
+         msed_out(i,k) = msed(i,k)
+         mse_out(i,k) = cpair*state%t(i, k) + 2500000*state%q(i, k, 1) + gravit*elev(i,k)
+      end do
+   end do
+
+   zm_q(:ncol,:pver) = state%q(:ncol,:pver,1)
+   zm_t(:ncol,:pver) = state%t(:ncol,:pver)
+
    call outfld('ZMMSETRANS', msetrans_out,      pcols, lchnk)
-   call outfld('ZMMSEU', mseu_out,      pcols, lchnk)
-   call outfld('ZMMSED', msed_out,      pcols, lchnk)
-   call outfld('ZMMSE', hmn_out,      pcols, lchnk)
+   call outfld('ZMMSE', msezm_out, pcols, lchnk)
+   call outfld('ZMMSEU', mseu_out, pcols, lchnk)
+   call outfld('ZMMSED', msed_out, pcols, lchnk)
+   call outfld('MSE',  mse_out,      pcols, lchnk)
+   call outfld('ZM_T', zm_t,      pcols, lchnk)
+   call outfld('ZM_Q', zm_q,      pcols, lchnk)
 
    if(convproc_do_aer .or. convproc_do_gas) then 
       call outfld('ZMMU', mu_out,      pcols, lchnk)

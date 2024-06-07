@@ -331,7 +331,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
                     aero    ,qi      ,dif     ,dnlf    ,dnif    , & 
                     dsf     ,dnsf    ,sprd    ,rice    ,frz     , &
                     mudpcu  ,lambdadpcu, microp_st, wuc, &
-                    msetrans, hu, hd, hmn)
+                    msetrans, hmn, z, hu, hd)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -501,11 +501,11 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8), intent(inout),optional :: wuc(pcols,pver) ! vertical velocity from ZMmp
 ! move these vars from local storage to output so that convective
 ! transports can be done in outside of conv_cam.
-   real(r8), intent(out) :: msetrans(pcols,pver)
-   real(r8), intent(out) :: hu(pcols,pver)       ! updraft MSE
-   real(r8), intent(out) :: hd(pcols,pver)       ! downdraft MSE
-   real(r8), intent(out) :: hmn(pcols,pver)       ! downdraft MSE
-   real(r8), intent(out) :: mu(pcols,pver)
+   real(r8), intent(out) :: msetrans(pcols,pver)   ! vertical MSE transport (credit: M. Waruszewski)
+   real(r8), intent(out) :: hmn(pcols,pver)        ! MSE derived from dycore fields
+   real(r8), intent(out) :: hu(pcols,pver)         ! Updraft MSE
+   real(r8), intent(out) :: hd(pcols,pver)         ! Downdraft MSE
+   real(r8), intent(out) :: mu(pcols,pver)         
    real(r8), intent(out) :: eu(pcols,pver)
    real(r8), intent(out) :: du(pcols,pver)
    real(r8), intent(out) :: md(pcols,pver)
@@ -517,6 +517,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8), intent(out) :: prec(pcols)
    real(r8), intent(out) :: rliq(pcols)   ! reserved liquid (not yet in cldliq) for energy integrals
    real(r8), intent(out) :: dcape(pcols)           ! output dynamical CAPE
+   real(r8), intent(out) :: z(pcols,pver)              ! w  grid slice of ambient mid-layer height in metres.
 
 
    real(r8) zs(pcols)
@@ -544,7 +545,6 @@ subroutine zm_convr(lchnk   ,ncol    , &
 !
    real(r8) q(pcols,pver)              ! w  grid slice of mixing ratio.
    real(r8) p(pcols,pver)              ! w  grid slice of ambient mid-layer pressure in mbs.
-   real(r8) z(pcols,pver)              ! w  grid slice of ambient mid-layer height in metres.
    real(r8) s(pcols,pver)              ! w  grid slice of scaled dry static energy (t+gz/cp).
    real(r8) tp(pcols,pver)             ! w  grid slice of parcel temperatures.
    real(r8) zf(pcols,pver+1)           ! w  grid slice of ambient interface height in metres.
@@ -609,7 +609,6 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8) su(pcols,pver)             ! wg grid slice of dry static energy in updraft.
    real(r8) qs(pcols,pver)             ! wg grid slice of saturation mixing ratio.
    real(r8) shat(pcols,pver)           ! wg grid slice of upper interface dry static energy.
-   ! real(r8) hmn(pcols,pver)            ! wg moist static energy.
    real(r8) hsat(pcols,pver)           ! wg saturated moist static energy.
    real(r8) qlg(pcols,pver)
    real(r8) dudt(pcols,pver)           ! wg u-wind tendency at gathered points.
@@ -1012,7 +1011,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
                landfracg, tpertg, &  
                aero    ,qhat ,lambdadpcug,mudpcug ,sprdg   ,frzg ,  &
                qldeg   ,qideg   ,qsdeg   ,ncdeg   ,nideg   ,nsdeg,  &
-               dsfmg   ,dsfng   ,loc_microp_st, msetrans, hu, hd )   
+               dsfmg   ,dsfng   ,loc_microp_st, msetrans, hu, hd)   
 
 
 !
@@ -1092,9 +1091,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
          pflxg(i,k+1)   = pflxg(i,k+1)*mb(i)*100._r8/grav
          sprdg(i,k)     = sprdg(i,k)*mb(i)
          frzg(i,k)      = frzg(i,k)*mb(i)
-         msetrans(i,k)  = msetrans   (i,k)*mb(i)
-         hu(i,k)        = hu(i,k)*mb(i)
-         hd(i,k)        = hd(i,k)*mb(i)
+         msetrans(i,k)  = msetrans(i,k)*mb(i)
 
          if ( zm_microp .and. mb(i).eq.0._r8) then
             qlg (i,k) = 0._r8
@@ -2649,7 +2646,7 @@ subroutine buoyan(lchnk   ,ncol    , &
                     (1._r8+qstp(i,k)/eps1)*eps1**2*rl*rl/ &
                     (rd**2*tp(i,k)**4)-qstp(i,k)* &
                     (1._r8+qstp(i,k)/eps1)*2._r8*eps1*rl/ &
-                    (rd*tp(i,k)**3))
+                   (rd*tp(i,k)**3))
             a1(i) = 1._r8/a1(i)
             a2(i) = -a2(i)*a1(i)**3
             y(i) = q(i,mx(i)) - qstp(i,k)
@@ -2820,12 +2817,12 @@ subroutine cldprp(lchnk   , &
    real(r8), intent(out) :: ed(pcols,pver)       ! entrainment rate of downdraft
    real(r8), intent(out) :: eu(pcols,pver)       ! entrainment rate of updraft
    real(r8), intent(out) :: hmn(pcols,pver)      ! moist stat energy of env
+   real(r8), intent(out) :: hu(pcols,pver)       ! moist stat energy of env associated with updrafts
+   real(r8), intent(out) :: hd(pcols,pver)       ! moist stat energy of env associated with downdrafts
    real(r8), intent(out) :: hsat(pcols,pver)     ! sat moist stat energy of env
    real(r8), intent(out) :: mc(pcols,pver)       ! net mass flux
    real(r8), intent(out) :: md(pcols,pver)       ! downdraft mass flux
    real(r8), intent(out) :: msetrans(pcols,pver) ! vertical MSE transport
-   real(r8), intent(out) :: hu(pcols,pver)       ! updraft MSE
-   real(r8), intent(out) :: hd(pcols,pver)       ! downdraft MSE
    real(r8), intent(out) :: mu(pcols,pver)       ! updraft mass flux
    real(r8), intent(out) :: pflx(pcols,pverp)    ! precipitation flux thru layer
    real(r8), intent(out) :: qd(pcols,pver)       ! spec humidity of downdraft
@@ -2834,6 +2831,8 @@ subroutine cldprp(lchnk   , &
    real(r8), intent(out) :: qu(pcols,pver)       ! spec hum of updraft
    real(r8), intent(out) :: sd(pcols,pver)       ! normalized dry stat energy of downdraft
    real(r8), intent(out) :: su(pcols,pver)       ! normalized dry stat energy of updraft
+
+
 
    ! Convective microphysics
    type(zm_microp_st)  :: loc_microp_st ! state and tendency of convective microphysics
@@ -2864,8 +2863,6 @@ subroutine cldprp(lchnk   , &
    real(r8) gamma(pcols,pver)
    real(r8) dz(pcols,pver)
    real(r8) iprm(pcols,pver)
-   ! real(r8) hu(pcols,pver)
-   ! real(r8) hd(pcols,pver)
    real(r8) eps(pcols,pver)
    real(r8) f(pcols,pver)
    real(r8) k1(pcols,pver)
@@ -3099,6 +3096,10 @@ subroutine cldprp(lchnk   , &
          end if
       end do
    end do
+
+   ! do k=1,msg
+   !   h_domain_avg(k) = sum(hmn(:, k))/real(size(hmn, dim=1))
+   ! end do
 !
 !jr Set to zero things which make this routine blow up
 !
