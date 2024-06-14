@@ -58,7 +58,7 @@ module zm_conv_intr
       dnsfzm_idx,    &     ! detrained convective snow num concen.
       prec_dp_idx,   &
       snow_dp_idx,   &
-      wuc_idx
+      wuc_idx       
 
 ! DCAPE-ULL
    integer :: t_star_idx       !t_star index in physics buffer
@@ -78,7 +78,8 @@ module zm_conv_intr
    integer  ::    lambdadpcu_idx   = 0
    integer  ::    mudpcu_idx       = 0
    integer  ::    icimrdp_idx      = 0
-
+   
+   integer  ::    dcape_avg_idx    = 0 ! GR
 
    logical :: old_snow  = .true.   ! set true to use old estimate of snow production in zm_conv_evap
                                    ! set false to use snow production from zm
@@ -98,12 +99,15 @@ subroutine zm_conv_register
 ! Purpose: register fields with the physics buffer
 !----------------------------------------
 
-  use physics_buffer, only : pbuf_add_field, dtype_r8
+  use physics_buffer, only : pbuf_add_field, dtype_r8, pbuf_init_time, dyn_time_lvls
   use misc_diagnostics,only: dcape_diags_register
 
   implicit none
 
   integer idx
+
+  ! Initialize number of dynamics time levels
+  call pbuf_init_time()
 
 ! Flux of precipitation from deep convection (kg/m2/s)
    call pbuf_add_field('DP_FLXPRC','global',dtype_r8,(/pcols,pverp/),dp_flxprc_idx) 
@@ -119,6 +123,9 @@ subroutine zm_conv_register
 
 ! vertical velocity (m/s)
    call pbuf_add_field('WUC','global',dtype_r8,(/pcols,pver/), wuc_idx)
+
+! GR: time-averaged DCAPE (J/kg/s)
+   call pbuf_add_field('DCAPE_AVG', 'global', dtype_r8, (/pcols, dyn_time_lvls/), dcape_avg_idx)
 
 ! DCAPE-UPL
 
@@ -170,7 +177,7 @@ subroutine zm_conv_init(pref_edge)
   use spmd_utils,     only: masterproc
   use error_messages, only: alloc_err	
   use phys_control,   only: phys_deepconv_pbl, phys_getopts, cam_physpkg_is
-  use physics_buffer, only: pbuf_get_index
+  use physics_buffer, only: pbuf_get_index, pbuf_init_time
   use rad_constituents, only: rad_cnst_get_info 
   use zm_microphysics, only: zm_mphyi
 
@@ -199,6 +206,9 @@ subroutine zm_conv_init(pref_edge)
 ! Note that all of the arrays inside this structure are conditionally allocated
 
   allocate(aero(begchunk:endchunk))
+
+  ! GR
+  dcape_avg_idx = pbuf_get_index('DCAPE_AVG')
 
 ! 
 ! Register fields with the output buffer
@@ -452,7 +462,7 @@ subroutine zm_conv_init(pref_edge)
     prec_dp_idx     = pbuf_get_index('PREC_DP')
     snow_dp_idx     = pbuf_get_index('SNOW_DP')
     wuc_idx         = pbuf_get_index('WUC')
-
+    
     lambdadpcu_idx  = pbuf_get_index('LAMBDADPCU')
     mudpcu_idx      = pbuf_get_index('MUDPCU')
     icimrdp_idx     = pbuf_get_index('ICIMRDP')
@@ -647,14 +657,16 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    use physics_types, only: physics_state_copy, physics_state_dealloc
    use physics_types, only: physics_ptend_sum, physics_ptend_dealloc
 
-   use phys_grid,     only: get_lat_p, get_lon_p
-   use time_manager,  only: get_nstep, is_first_step
-   use physics_buffer, only : pbuf_get_field, physics_buffer_desc, pbuf_old_tim_idx
-   use constituents,  only: pcnst, cnst_get_ind, cnst_is_convtran1
-   use physconst,     only: gravit
-   use phys_control,  only: cam_physpkg_is
-   use time_manager,       only: get_curr_date
+   use phys_grid,     only   : get_lat_p, get_lon_p
+   use time_manager,  only   : get_nstep, is_first_step, is_second_step
+   use physics_buffer, only  : pbuf_get_field, pbuf_set_field, physics_buffer_desc, & 
+                               pbuf_old_tim_idx, pbuf_init_time, dyn_time_lvls 
+   use constituents,  only   : pcnst, cnst_get_ind, cnst_is_convtran1
+   use physconst,     only   : gravit
+   use phys_control,  only   : cam_physpkg_is
+   use time_manager,  only   : get_curr_date
    use interpolate_data, only: vertinterp
+
 
 
    ! Arguments
@@ -809,6 +821,11 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8) :: sprd(pcols,pver)
    real(r8) :: frz(pcols,pver)
    real(r8)  precz_snum(pcols)
+   
+   ! GR
+   real(r8) :: dcape_out(pcols)
+   real(r8) :: dcape_temp(pcols, dyn_time_lvls)
+   real(r8) :: dcape_m2(pcols), dcape_m1(pcols)
 
 
    if (zm_microp) then
@@ -885,6 +902,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
        microp_st%fallgn(pcols, pver),  & ! num tendency of graupel fallout
        microp_st%fhmrm (pcols,pver) )    ! mass tendency due to homogeneous freezing of rain
     end if
+   call pbuf_init_time()
 
 
    doslop          = .false.
@@ -1016,9 +1034,6 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
       end if
    end if
 
-
-
-
 !
 ! Begin with Zhang-McFarlane (1996) convection parameterization
 !
@@ -1035,14 +1050,16 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
                     t_star, q_star, dcape, &  
                     aero(lchnk), qi, dif, dnlf, dnif, dsf, dnsf, sprd, rice, frz, mudpcu, &
                     lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed)
+    
+   ! GR: place data into physics buffer
+   call pbuf_set_field(pbuf, dcape_avg_idx, dcape, (/1, itim_old/), (/pcols, 1/))
 
    if (zm_microp) then
      dlftot(:ncol,:pver) = dlf(:ncol,:pver) + dif(:ncol,:pver) + dsf(:ncol,:pver)
    else
      dlftot(:ncol,:pver) = dlf(:ncol,:pver)
-   end if
-
-   
+   end if  
+ 
    call t_stopf ('zm_convr')
 
 
@@ -1164,12 +1181,10 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
        enddo
      enddo
 
-   
    !   
    ! End the MCSP parameterization here 
    !   
       
-
       MCSP_DT(:ncol,:pver) = MCSP_DT(:ncol,:pver)/cpair
       call outfld('MCSP_DT    ',MCSP_DT           ,pcols   ,lchnk   )
       call outfld('MCSP_freq    ',MCSP_freq           ,pcols   ,lchnk   )
@@ -1180,8 +1195,25 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
 
    end if
 
+   ! ---------------------------------------------------------------------------------
+   ! Process DCAPE and average, if applicable
+   ! Call DCAPE that has been processed
+   
+   if (is_first_step() .or. is_second_step()) then
+       dcape_out(:ncol) = dcape(:ncol)
+   else
+       call pbuf_get_field(pbuf, dcape_avg_idx, dcape_temp, (/1, itim_old/), (/pcols, 1/))
+       dcape_m2(:ncol) = dcape_temp(nstep-1, :ncol)
+       dcape_m1(:ncol) = dcape_temp(nstep-2, :ncol)
+       dcape_out(:ncol) = (dcape(:ncol) + dcape_m1(:ncol) + dcape_m2(:ncol))/3
+   endif
+
+   call outfld('DCAPE_AVG', dcape_out, pcols, lchnk)
    call outfld('DCAPE', dcape, pcols, lchnk)
    call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
+
+   ! ----------------------------------------------------------------------------------
+
 !
 ! Output fractional occurance of ZM convection
 !
@@ -1196,28 +1228,33 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    mcon(:ncol,:pver) = mcon(:ncol,:pver) * 100._r8/gravit
 
    call outfld('CMFMCDZM', mcon, pcols, lchnk)
+   
+   ! Iterate over all points to pre-populate all ZM-specific fields
+   do i=1,ncol
+      do k=1,pver
+         mse_out(i,k) = cpair*state%t(i, k) + 2500000*state%q(i, k, 1) + gravit*elev(i,k)
+         msezm_out(i,k) = mse_out(i,k)
+         mseu_out(i,k) = mse_out(i,k)
+         msed_out(i,k) = mse_out(i,k)
+      end do
+   end do
 
    ! Store upward and downward mass fluxes in un-gathered arrays
    ! + convert from mb/s to kg/m^2/s
    do i=1,lengath
       do k=1,pver
-         ii = ideep(i)
+         ii = ideep(i) 
+         mseu_out(ii,k) = mseu(i,k)
+         msed_out(ii,k) = msed(i,k)
          mu_out(ii,k) = mu(i,k) * 100._r8/gravit
          md_out(ii,k) = md(i,k) * 100._r8/gravit
          msetrans_out(ii,k) = msetrans(i,k) * 100._r8/gravit
          ! Get MSE from ZM output state variables 
-         msezm_out(ii, k) = cpair*state%t(ii, k) + 2500000*state%q(ii, k, 1) + gravit*elev(ii,k)
+         msezm_out(ii,k) = msemn(i,k)
       end do
    end do
 
-   do i=1,ncol
-      do k=1,pver
-         mseu_out(i,k) = mseu(i,k)
-         msed_out(i,k) = msed(i,k)
-         mse_out(i,k) = cpair*state%t(i, k) + 2500000*state%q(i, k, 1) + gravit*elev(i,k)
-      end do
-   end do
-
+   ! Output state variables for offline diagnostics
    zm_q(:ncol,:pver) = state%q(:ncol,:pver,1)
    zm_t(:ncol,:pver) = state%t(:ncol,:pver)
 

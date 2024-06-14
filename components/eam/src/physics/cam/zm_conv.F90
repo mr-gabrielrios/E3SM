@@ -516,7 +516,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    integer,  intent(out) :: jcbot(pcols)  ! o row of base of cloud indices passed out.
    real(r8), intent(out) :: prec(pcols)
    real(r8), intent(out) :: rliq(pcols)   ! reserved liquid (not yet in cldliq) for energy integrals
-   real(r8), intent(out) :: dcape(pcols)           ! output dynamical CAPE
+   real(r8), intent(inout) :: dcape(pcols)           ! output dynamical CAPE
    real(r8), intent(out) :: z(pcols,pver)              ! w  grid slice of ambient mid-layer height in metres.
 
 

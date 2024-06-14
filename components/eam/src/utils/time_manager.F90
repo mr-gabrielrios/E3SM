@@ -37,6 +37,7 @@ module time_manager
       get_curr_calday,          &! return calendar day at end of current timestep
       get_calday,               &! return calendar day from input date
       is_first_step,            &! return true on first step of initial run
+      is_second_step,           &
       is_first_restart_step,    &! return true on first step of restart or branch run
       timemgr_is_caltype,       &! return true if incoming calendar type string matches actual calendar type in use
       timemgr_get_calendar_cf,  &! return cf standard for calendar type
@@ -1153,6 +1154,27 @@ logical function is_first_step()
    is_first_step = (nstep == 0)
 
 end function is_first_step
+
+!=========================================================================================
+
+logical function is_second_step()
+
+! Return true on second step of initial run only.
+
+! Local variables
+   character(len=*), parameter :: sub = 'is_second_step'
+   integer :: rc
+   integer :: nstep
+   integer(ESMF_KIND_I8) :: step_no
+!-----------------------------------------------------------------------------------------
+
+   call ESMF_ClockGet( tm_clock, advanceCount=step_no, rc=rc )
+   call chkrc(rc, sub//': error return from ESMF_ClockGet')
+   nstep = step_no
+   is_second_step = (nstep == 1)
+
+end function is_second_step
+
 !=========================================================================================
 
 logical function is_first_restart_step()

@@ -256,8 +256,11 @@ subroutine co2_data_flux_advance (xin)
 
    !----------------------------------------------------------------------------
 
+   ! GR: boolean to determine if more data needed
+   !     based on the condition statement below, this expression determines whether data
+   !     should be read in
    read_data = xin%time_coord%read_more() .or. .not. xin%initialized
-
+    
    indx2_pre_adv = xin%time_coord%indxs(2)
 
    call xin%time_coord%advance()

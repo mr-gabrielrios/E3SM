@@ -775,6 +775,8 @@ end subroutine clubb_init_cnst
     iiedsclr_thl = -1
     iiedsclr_CO2 = -1
 
+    zm_microp = .false.
+
     if (zm_microp) then
         dlfzm_idx = pbuf_get_index('DLFZM')
         difzm_idx = pbuf_get_index('DIFZM')
@@ -2638,6 +2640,7 @@ end subroutine clubb_init_cnst
 
    call physics_ptend_init(ptend_loc,state%psetcols, 'clubb_det', ls=.true., lq=lqice)
 
+   zm_microp = .false.
    if (zm_microp) then
       call pbuf_get_field(pbuf, dlfzm_idx, dlfzm)
       call pbuf_get_field(pbuf, difzm_idx, difzm)
