@@ -752,7 +752,7 @@ subroutine phys_init( phys_state, phys_tend, pbuf2d, cam_out )
     use cloud_diagnostics,  only: cloud_diagnostics_init
     use co2_diagnostics,    only: co2_diags_init
     use stratiform,         only: stratiform_init
-    uteout_idxse wv_saturation,      only: wv_sat_init
+    use wv_saturation,      only: wv_sat_init
     use microp_driver,      only: microp_driver_init
     use microp_aero,        only: microp_aero_init
     use macrop_driver,      only: macrop_driver_init

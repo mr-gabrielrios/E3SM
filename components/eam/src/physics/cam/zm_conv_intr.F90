@@ -824,7 +824,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    
    ! GR
    real(r8) :: dcape_out(pcols)
-   real(r8) :: dcape_temp(pcols, dyn_time_lvls)
+   real(r8), pointer, dimension(:,:) :: dcape_temp
    real(r8) :: dcape_m2(pcols), dcape_m1(pcols)
 
 
@@ -1202,7 +1202,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    if (is_first_step() .or. is_second_step()) then
        dcape_out(:ncol) = dcape(:ncol)
    else
-       call pbuf_get_field(pbuf, dcape_avg_idx, dcape_temp, (/1, itim_old/), (/pcols, 1/))
+       call pbuf_get_field(pbuf, dcape_avg_idx, dcape_temp)
        dcape_m2(:ncol) = dcape_temp(nstep-1, :ncol)
        dcape_m1(:ncol) = dcape_temp(nstep-2, :ncol)
        dcape_out(:ncol) = (dcape(:ncol) + dcape_m1(:ncol) + dcape_m2(:ncol))/3

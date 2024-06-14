@@ -41,3 +41,6 @@ site
 components/eamxx/site/*
 # Ignore auto-generated eamxx_params.md file
 components/eamxx/docs/common/eamxx_params.md
+
+# Other general ignores
+.*.swp
