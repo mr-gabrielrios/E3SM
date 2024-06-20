@@ -63,6 +63,7 @@ module physpkg
   !  Physics buffer index
   integer ::  teout_idx          = 0  
 
+  integer ::  dadt_avg_idx       = 0 ! GAR: dadt modification
   integer ::  tini_idx           = 0 
   integer ::  qini_idx           = 0 
   integer ::  cldliqini_idx      = 0 
@@ -128,7 +129,7 @@ subroutine phys_register
     !            A. Gettelman, Nov 2010 - put micro/macro physics into separate routines
     ! 
     !-----------------------------------------------------------------------
-    use physics_buffer,     only: pbuf_init_time
+    use physics_buffer,     only: pbuf_init_time, dyn_time_lvls
     use physics_buffer,     only: pbuf_add_field, dtype_r8, pbuf_register_subcol
     use shr_kind_mod,       only: r8 => shr_kind_r8
     use spmd_utils,         only: masterproc
@@ -227,7 +228,8 @@ subroutine phys_register
     call pbuf_add_field('CLDICEINI', 'physpkg', dtype_r8, (/pcols,pver/), cldiceini_idx)
     call pbuf_add_field('static_ener_ac', 'global', dtype_r8, (/pcols/), static_ener_ac_idx)
     call pbuf_add_field('water_vap_ac',   'global', dtype_r8, (/pcols/), water_vap_ac_idx)
-
+    ! GAR: add field to dadt
+    call pbuf_add_field('DADT_AVG', 'global', dtype_r8, (/pcols, dyn_time_lvls/), dadt_avg_idx)
 
     ! check energy package
     call check_energy_register
@@ -2343,13 +2345,15 @@ subroutine tphysbc (ztodt,               &
     !BSINGH - Following variables are from zm_conv_intr, which are moved here as they are now used
     ! by aero_model_wetdep subroutine. 
 
+    ! Mass flux variables
     real(r8):: mu(pcols,pver) 
     real(r8):: eu(pcols,pver)
     real(r8):: du(pcols,pver)
     real(r8):: md(pcols,pver)
     real(r8):: ed(pcols,pver)
     real(r8):: dp(pcols,pver)
-    
+    real(r8), pointer, dimension(:,:) :: dadt_avg ! GAR: da/dt average    
+
     ! wg layer thickness in mbs (between upper/lower interface).
     real(r8):: dsubcld(pcols)
     
@@ -2473,6 +2477,7 @@ subroutine tphysbc (ztodt,               &
     call pbuf_get_field(pbuf, qini_idx, qini)
     call pbuf_get_field(pbuf, cldliqini_idx, cldliqini)
     call pbuf_get_field(pbuf, cldiceini_idx, cldiceini)
+
 
     ifld   =  pbuf_get_index('DTCORE')
     call pbuf_get_field(pbuf, ifld, dtcore, start=(/1,1,itim_old/), kount=(/pcols,pver,1/) )
@@ -2644,6 +2649,10 @@ end if
     !===================================================
     ! Moist convection
     !===================================================
+
+    ! Get field data for da/dt
+    ! call pbuf_get_field(pbuf, da_idx, da)
+    
     call t_startf('moist_convection')
     !
     ! Since the PBL doesn't pass constituent perturbations, they
@@ -2660,7 +2669,7 @@ end if
     call t_stopf('convect_deep_tend')
 
     call physics_update(state, ptend, ztodt, tend)
-
+    
     call pbuf_get_field(pbuf, prec_dp_idx, prec_dp )
     call pbuf_get_field(pbuf, snow_dp_idx, snow_dp )
     call pbuf_get_field(pbuf, prec_sh_idx, prec_sh )
@@ -2672,6 +2681,9 @@ end if
     call pbuf_get_field(pbuf, prec_pcw_idx, prec_pcw )
     call pbuf_get_field(pbuf, snow_pcw_idx, snow_pcw )
 
+    ! GAR: dadt modification
+    call pbuf_get_field(pbuf, dadt_avg_idx, dadt_avg)
+   
     if (use_subcol_microp) then
       call pbuf_get_field(pbuf, prec_str_idx, prec_str_sc, col_type=col_type_subcol)
       call pbuf_get_field(pbuf, snow_str_idx, snow_str_sc, col_type=col_type_subcol)

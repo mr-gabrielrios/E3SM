@@ -24,6 +24,7 @@ module zm_conv
   use cam_abortutils,      only: endrun
   use cam_logfile,     only: iulog
   use zm_microphysics, only: zm_mphy, zm_aero_t, zm_microp_st
+  use physics_buffer,  only: physics_buffer_desc, dyn_time_lvls
 
   implicit none
 
@@ -518,8 +519,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8), intent(out) :: rliq(pcols)   ! reserved liquid (not yet in cldliq) for energy integrals
    real(r8), intent(inout) :: dcape(pcols)           ! output dynamical CAPE
    real(r8), intent(out) :: z(pcols,pver)              ! w  grid slice of ambient mid-layer height in metres.
-
-
+   
    real(r8) zs(pcols)
    real(r8) dlg(pcols,pver)    ! gathrd version of the detraining cld h2o tend
    real(r8) pflxg(pcols,pverp) ! gather precip flux at each level
@@ -637,7 +637,6 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8) frzg(pcols,pver)           ! gathered heating rate due to freezing
 
    type(zm_microp_st)  :: loc_microp_st ! state and tendency of convective microphysics
-
 
    real(r8) mb(pcols)                  ! wg cloud base mass flux.
 
@@ -1039,7 +1038,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 qlg     ,dsubcld ,mb      ,capeg   ,tlg     , &
                 lclg    ,lelg    ,jt      ,maxg    ,1       , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
-                msg     ,capelmt_wk )
+                msg     ,capelmt_wk)
 !
 ! limit cloud base mass flux to theoretical upper bound.
 !
@@ -3813,7 +3812,7 @@ subroutine closure(lchnk   , &
                    ql      ,dsubcld ,mb      ,cape    ,tl      , &
                    lcl     ,lel     ,jt      ,mx      ,il1g    , &
                    il2g    ,rd      ,grav    ,cp      ,rl      , &
-                   msg     ,capelmt )
+                   msg     ,capelmt)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -3832,8 +3831,10 @@ subroutine closure(lchnk   , &
 ! the documentation has been enhanced to the degree that we are able
 ! 
 !-----------------------------------------------------------------------
-   use dycore,    only: dycore_is, get_resolution
-
+   use dycore,         only: dycore_is, get_resolution
+   use time_manager,   only: is_first_step, is_second_step, get_nstep
+   use physics_buffer, only: pbuf_add_field, pbuf_get_index, pbuf_get_field, &
+                             dyn_time_lvls, pbuf_old_tim_idx, pbuf_get_chunk
    implicit none
 
 !
@@ -3901,6 +3902,13 @@ subroutine closure(lchnk   , &
 
    real(r8) rd
    real(r8) rl
+
+   ! GR dA/dt modifications
+   ! real(r8), dimension(:,:)  :: da(pcols, dyn_time_lvls)         ! physics buffer pointer
+   integer                   :: nstep      ! current timestep number
+
+   nstep = get_nstep()
+
 ! change of subcloud layer properties due to convection is
 ! related to cumulus updrafts and downdrafts.
 ! mc(z)=f(z)*mb, mub=betau*mb, mdb=betad*mb are used
@@ -4008,12 +4016,27 @@ subroutine closure(lchnk   , &
    do k = kmin, kmax
       do i = il1g,il2g
          if ( k >= lel(i) .and. k <= mx(i) - 1) then
+            ! GR (2024-06-17): this feeds into calculation for mb (cloud-base mass flux)
             dadt(i) = dadt(i) + dboydt(i,k)* (zf(i,k)-zf(i,k+1))
          endif
       end do
    end do
+
+   write(iulog,*) 'zm_conv closure: nstep', nstep
+   write(iulog,*) 'zm_conv da/dt: dadt', dadt
+
+   ! GR - incorporate time-averaging to da/dt before implemented to mass flux, mb
+   ! if (is_first_step() .or. is_second_step()) then
+   !    da(:, nstep+1) = dadt
+   ! else
+   !   da(:, nstep) = (dadt + da(:, nstep-1) + da(:, nstep-2))/3.0
+   ! endif
+
    do i = il1g,il2g
+      ! GR (2024-06-17): this feeds into calculation of the cloud-base mass flux
       dltaa = -1._r8* (cape(i)-capelmt)
+      ! GR (2024-06-17): here is a modification to the cloud-base mass flux
+      ! this is highlighed because it's an output quantity
       if (dadt(i) /= 0._r8) mb(i) = max(dltaa/tau/dadt(i),0._r8)
       if (zm_microp .and. mx(i)-jt(i) < 2._r8) mb(i) =0.0_r8
    end do

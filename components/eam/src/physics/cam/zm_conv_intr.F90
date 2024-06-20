@@ -58,7 +58,9 @@ module zm_conv_intr
       dnsfzm_idx,    &     ! detrained convective snow num concen.
       prec_dp_idx,   &
       snow_dp_idx,   &
-      wuc_idx       
+      wuc_idx,       &
+      dadt_avg_idx               ! GR: da/dt modification  
+       
 
 ! DCAPE-ULL
    integer :: t_star_idx       !t_star index in physics buffer
@@ -123,9 +125,7 @@ subroutine zm_conv_register
 
 ! vertical velocity (m/s)
    call pbuf_add_field('WUC','global',dtype_r8,(/pcols,pver/), wuc_idx)
-
-! GR: time-averaged DCAPE (J/kg/s)
-   call pbuf_add_field('DCAPE_AVG', 'global', dtype_r8, (/pcols, dyn_time_lvls/), dcape_avg_idx)
+   
 
 ! DCAPE-UPL
 
@@ -141,6 +141,7 @@ subroutine zm_conv_register
    call pbuf_add_field('DLFZM', 'physpkg', dtype_r8, (/pcols,pver/), dlfzm_idx)
    ! detrained convective cloud ice mixing ratio.
    call pbuf_add_field('DIFZM', 'physpkg', dtype_r8, (/pcols,pver/), difzm_idx)
+
 
    if (zm_microp) then
       ! Only add the number conc fields if the microphysics is active.
@@ -207,9 +208,6 @@ subroutine zm_conv_init(pref_edge)
 
   allocate(aero(begchunk:endchunk))
 
-  ! GR
-  dcape_avg_idx = pbuf_get_index('DCAPE_AVG')
-
 ! 
 ! Register fields with the output buffer
 !
@@ -248,6 +246,7 @@ subroutine zm_conv_init(pref_edge)
 
     call addfld ('CAPE_ZM',horiz_only, 'A',   'J/kg', 'Convectively available potential energy')
     call addfld ('DCAPE',  horiz_only, 'A',   'J/kg', 'change rate of Convectively available potential energy')
+    call addfld ('DADT_AVG',  horiz_only, 'A',   'J/kg', 'change rate of convectively available potential energy')
     call addfld ('FREQZM',horiz_only  ,'A','fraction', 'Fractional occurance of ZM convection') 
 
     call addfld ('ZMMTT',     (/ 'lev' /), 'A', 'K/s', 'T tendency - ZM convective momentum transport')
@@ -266,6 +265,7 @@ subroutine zm_conv_init(pref_edge)
     call addfld ('ZMICUD',     (/ 'lev' /), 'A', 'm/s', 'ZM in-cloud U downdrafts')
     call addfld ('ZMICVU',     (/ 'lev' /), 'A', 'm/s', 'ZM in-cloud V updrafts')
     call addfld ('ZMICVD',     (/ 'lev' /), 'A', 'm/s', 'ZM in-cloud V downdrafts')
+   
 
     if (MCSP) then 
        call addfld ('MCSP_DT',(/ 'lev' /), 'A','K/s','T tedency due to MCSP')
@@ -462,7 +462,7 @@ subroutine zm_conv_init(pref_edge)
     prec_dp_idx     = pbuf_get_index('PREC_DP')
     snow_dp_idx     = pbuf_get_index('SNOW_DP')
     wuc_idx         = pbuf_get_index('WUC')
-    
+ 
     lambdadpcu_idx  = pbuf_get_index('LAMBDADPCU')
     mudpcu_idx      = pbuf_get_index('MUDPCU')
     icimrdp_idx     = pbuf_get_index('ICIMRDP')
@@ -714,9 +714,11 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    
    ! w holds position of gathered points vs longitude index   
    integer, intent(out)  :: lengath
-   ! Local variables
+   
+   ! w holds position of gathered points vs longitude index   
 
-    type(zm_microp_st)        :: microp_st 
+   ! Local variables
+   type(zm_microp_st)        :: microp_st 
 
    integer :: i,k,l,m
    integer :: ilon                      ! global longitude index of a column
@@ -821,12 +823,6 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8) :: sprd(pcols,pver)
    real(r8) :: frz(pcols,pver)
    real(r8)  precz_snum(pcols)
-   
-   ! GR
-   real(r8) :: dcape_out(pcols)
-   real(r8), pointer, dimension(:,:) :: dcape_temp
-   real(r8) :: dcape_m2(pcols), dcape_m1(pcols)
-
 
    if (zm_microp) then
      allocate( &
@@ -1051,9 +1047,6 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
                     aero(lchnk), qi, dif, dnlf, dnif, dsf, dnsf, sprd, rice, frz, mudpcu, &
                     lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed)
     
-   ! GR: place data into physics buffer
-   call pbuf_set_field(pbuf, dcape_avg_idx, dcape, (/1, itim_old/), (/pcols, 1/))
-
    if (zm_microp) then
      dlftot(:ncol,:pver) = dlf(:ncol,:pver) + dif(:ncol,:pver) + dsf(:ncol,:pver)
    else
@@ -1179,7 +1172,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
          if (doslop_uwind) ptend_loc%u(i,k) = Qmu(i,k)
          if (doslop_vwind) ptend_loc%v(i,k) = Qmv(i,k)
        enddo
-     enddo
+ enddo
 
    !   
    ! End the MCSP parameterization here 
@@ -1195,20 +1188,6 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
 
    end if
 
-   ! ---------------------------------------------------------------------------------
-   ! Process DCAPE and average, if applicable
-   ! Call DCAPE that has been processed
-   
-   if (is_first_step() .or. is_second_step()) then
-       dcape_out(:ncol) = dcape(:ncol)
-   else
-       call pbuf_get_field(pbuf, dcape_avg_idx, dcape_temp)
-       dcape_m2(:ncol) = dcape_temp(nstep-1, :ncol)
-       dcape_m1(:ncol) = dcape_temp(nstep-2, :ncol)
-       dcape_out(:ncol) = (dcape(:ncol) + dcape_m1(:ncol) + dcape_m2(:ncol))/3
-   endif
-
-   call outfld('DCAPE_AVG', dcape_out, pcols, lchnk)
    call outfld('DCAPE', dcape, pcols, lchnk)
    call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
 
@@ -1545,6 +1524,7 @@ subroutine zm_conv_tend_2( state,  ptend,  ztodt, pbuf,mu, eu, &
    type(physics_ptend), intent(out)   :: ptend          ! indivdual parameterization tendencies
    
    type(physics_buffer_desc), pointer :: pbuf(:)
+   type(physics_buffer_desc), pointer :: pbuf2d(:,:)    ! GR: added for da/dt averaging
 
    real(r8), intent(in) :: ztodt                          ! 2 delta t (model time increment)
    real(r8), intent(in):: mu(pcols,pver) 

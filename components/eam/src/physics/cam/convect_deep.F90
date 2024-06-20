@@ -206,7 +206,7 @@ subroutine convect_deep_tend( &
      rliq    ,rice     , &
      ztodt   , &
      state   ,ptend   ,landfrac ,pbuf, mu, eu, &
-     du, md, ed, dp, dsubcld, jt, maxg, ideep,lengath ) 
+     du, md, ed, dp, dsubcld, jt, maxg, ideep, lengath) 
 
 
 
@@ -217,7 +217,7 @@ subroutine convect_deep_tend( &
    use zm_conv_intr,   only: zm_conv_tend
    use cam_history,    only: outfld
    use physconst,      only: cpair
-   use physics_buffer, only: physics_buffer_desc, pbuf_get_field
+   use physics_buffer, only: physics_buffer_desc, pbuf_get_field, dyn_time_lvls
 
 ! Arguments
    type(physics_state), intent(in ) :: state   ! Physics state variables
@@ -259,6 +259,8 @@ subroutine convect_deep_tend( &
    
    ! w holds position of gathered points vs longitude index   
    integer, intent(out) :: lengath
+   
+   ! holds da/dt data   
 
    real(r8), pointer :: prec(:)   ! total precipitation
    real(r8), pointer :: snow(:)   ! snow from ZM convection 
