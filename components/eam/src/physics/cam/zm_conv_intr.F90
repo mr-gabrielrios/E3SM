@@ -648,7 +648,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
      ztodt   , &
      jctop   ,jcbot , &
      state   ,ptend_all   ,landfrac,  pbuf, mu, eu, &
-     du, md, ed, dp, dsubcld, jt, maxg, ideep, lengath) 
+     du, md, ed, dp, dsubcld, jt, maxg, ideep, lengath, dadt_nstep) 
 
    use cam_history,   only: outfld
    use physics_types, only: physics_state, physics_ptend
@@ -698,7 +698,8 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8), intent(out):: du(pcols,pver) 
    real(r8), intent(out):: md(pcols,pver) 
    real(r8), intent(out):: ed(pcols,pver) 
-   real(r8), intent(out):: dp(pcols,pver) 
+   real(r8), intent(out):: dp(pcols,pver)
+   real(r8), intent(inout):: dadt_nstep(pcols, dyn_time_lvls) ! GAR: dadt pull 
    
    ! wg layer thickness in mbs (between upper/lower interface).
    real(r8), intent(out):: dsubcld(pcols) 
@@ -1045,7 +1046,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
                     lengath ,ql      ,rliq  ,landfrac,  &
                     t_star, q_star, dcape, &  
                     aero(lchnk), qi, dif, dnlf, dnif, dsf, dnsf, sprd, rice, frz, mudpcu, &
-                    lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed)
+                    lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed, dadt_nstep)
     
    if (zm_microp) then
      dlftot(:ncol,:pver) = dlf(:ncol,:pver) + dif(:ncol,:pver) + dsf(:ncol,:pver)

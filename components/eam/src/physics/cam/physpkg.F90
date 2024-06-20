@@ -2352,7 +2352,8 @@ subroutine tphysbc (ztodt,               &
     real(r8):: md(pcols,pver)
     real(r8):: ed(pcols,pver)
     real(r8):: dp(pcols,pver)
-    real(r8), pointer, dimension(:,:) :: dadt_avg ! GAR: da/dt average    
+    real(r8):: dadt_nstep(pcols, dyn_time_lvls) ! GAR: da/dt for the current timestep    
+    real(r8), pointer, dimension(:,:) :: dadt_avg   ! GAR: da/dt average    
 
     ! wg layer thickness in mbs (between upper/lower interface).
     real(r8):: dsubcld(pcols)
@@ -2658,6 +2659,10 @@ end if
     ! Since the PBL doesn't pass constituent perturbations, they
     ! are zeroed here for input to the moist convection routine
     !
+    ! GAR: dadt modification
+    call pbuf_get_field(pbuf, dadt_avg_idx, dadt_avg)
+    dadt_nstep(:, :) = dadt_avg 
+ 
     call t_startf ('convect_deep_tend')
     call convect_deep_tend(  &
          cmfmc,      cmfcme,             &
@@ -2665,7 +2670,7 @@ end if
          rliq,       rice, &
          ztodt,   &
          state,   ptend, cam_in%landfrac, pbuf, mu, eu, du, md, ed, dp,   &
-         dsubcld, jt, maxg, ideep, lengath) 
+         dsubcld, jt, maxg, ideep, lengath, dadt_nstep) 
     call t_stopf('convect_deep_tend')
 
     call physics_update(state, ptend, ztodt, tend)
@@ -2681,9 +2686,6 @@ end if
     call pbuf_get_field(pbuf, prec_pcw_idx, prec_pcw )
     call pbuf_get_field(pbuf, snow_pcw_idx, snow_pcw )
 
-    ! GAR: dadt modification
-    call pbuf_get_field(pbuf, dadt_avg_idx, dadt_avg)
-   
     if (use_subcol_microp) then
       call pbuf_get_field(pbuf, prec_str_idx, prec_str_sc, col_type=col_type_subcol)
       call pbuf_get_field(pbuf, snow_str_idx, snow_str_sc, col_type=col_type_subcol)

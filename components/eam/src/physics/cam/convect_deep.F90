@@ -206,7 +206,7 @@ subroutine convect_deep_tend( &
      rliq    ,rice     , &
      ztodt   , &
      state   ,ptend   ,landfrac ,pbuf, mu, eu, &
-     du, md, ed, dp, dsubcld, jt, maxg, ideep, lengath) 
+     du, md, ed, dp, dsubcld, jt, maxg, ideep, lengath, dadt_nstep) 
 
 
 
@@ -244,6 +244,7 @@ subroutine convect_deep_tend( &
    real(r8), intent(out):: md(pcols,pver) 
    real(r8), intent(out):: ed(pcols,pver) 
    real(r8), intent(out):: dp(pcols,pver) 
+   real(r8), intent(inout):: dadt_nstep(pcols, dyn_time_lvls) ! GAR: dadt pull 
    
    ! wg layer thickness in mbs (between upper/lower interface).
    real(r8), intent(out):: dsubcld(pcols) 
@@ -347,7 +348,7 @@ subroutine convect_deep_tend( &
           ztodt   , &
           jctop, jcbot , &
           state   ,ptend   ,landfrac, pbuf, mu, eu, &
-          du, md, ed, dp, dsubcld, jt, maxg, ideep, lengath)
+          du, md, ed, dp, dsubcld, jt, maxg, ideep, lengath, dadt_nstep)
      call t_stopf('zm_conv_tend')
 
 

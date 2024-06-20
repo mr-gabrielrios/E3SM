@@ -332,7 +332,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
                     aero    ,qi      ,dif     ,dnlf    ,dnif    , & 
                     dsf     ,dnsf    ,sprd    ,rice    ,frz     , &
                     mudpcu  ,lambdadpcu, microp_st, wuc, &
-                    msetrans, hmn, z, hu, hd)
+                    msetrans, hmn, z, hu, hd, dadt_nstep)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -519,7 +519,9 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8), intent(out) :: rliq(pcols)   ! reserved liquid (not yet in cldliq) for energy integrals
    real(r8), intent(inout) :: dcape(pcols)           ! output dynamical CAPE
    real(r8), intent(out) :: z(pcols,pver)              ! w  grid slice of ambient mid-layer height in metres.
+   real(r8), intent(inout):: dadt_nstep(pcols, dyn_time_lvls) ! GAR: dadt pull
    
+
    real(r8) zs(pcols)
    real(r8) dlg(pcols,pver)    ! gathrd version of the detraining cld h2o tend
    real(r8) pflxg(pcols,pverp) ! gather precip flux at each level
@@ -1038,7 +1040,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 qlg     ,dsubcld ,mb      ,capeg   ,tlg     , &
                 lclg    ,lelg    ,jt      ,maxg    ,1       , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
-                msg     ,capelmt_wk)
+                msg     ,capelmt_wk, dadt_nstep)
 !
 ! limit cloud base mass flux to theoretical upper bound.
 !
@@ -3812,7 +3814,7 @@ subroutine closure(lchnk   , &
                    ql      ,dsubcld ,mb      ,cape    ,tl      , &
                    lcl     ,lel     ,jt      ,mx      ,il1g    , &
                    il2g    ,rd      ,grav    ,cp      ,rl      , &
-                   msg     ,capelmt)
+                   msg     ,capelmt, dadt_nstep)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -3846,6 +3848,8 @@ subroutine closure(lchnk   , &
    real(r8), intent(inout) :: t(pcols,pver)        ! temperature
    real(r8), intent(inout) :: p(pcols,pver)        ! pressure (mb)
    real(r8), intent(inout) :: mb(pcols)            ! cloud base mass flux
+   real(r8), intent(inout):: dadt_nstep(pcols, dyn_time_lvls) ! GAR: dadt pull
+
    real(r8), intent(in) :: z(pcols,pver)        ! height (m)
    real(r8), intent(in) :: s(pcols,pver)        ! normalized dry static energy
    real(r8), intent(in) :: tp(pcols,pver)       ! parcel temp
