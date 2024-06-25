@@ -352,7 +352,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
 ! 
 !-----------------------------------------------------------------------
    use phys_control, only: cam_physpkg_is
-   use time_manager, only: is_first_step 
+   use time_manager, only: get_nstep, is_first_step 
 !
 ! ************************ index of variables **********************
 !
@@ -519,8 +519,9 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8), intent(out) :: rliq(pcols)   ! reserved liquid (not yet in cldliq) for energy integrals
    real(r8), intent(inout) :: dcape(pcols)           ! output dynamical CAPE
    real(r8), intent(out) :: z(pcols,pver)              ! w  grid slice of ambient mid-layer height in metres.
-   real(r8), intent(inout):: dadt_nstep(pcols, dyn_time_lvls) ! GAR: dadt pull
-   
+   real(r8), intent(inout):: dadt_nstep(100, pcols)     ! GAR: dadt pull
+   real(r8) dadt_g(pcols)                               ! GAR: dadt gathered points
+   integer nstep
 
    real(r8) zs(pcols)
    real(r8) dlg(pcols,pver)    ! gathrd version of the detraining cld h2o tend
@@ -733,6 +734,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
          dsfng(i,k) = 0._r8
       end do
    end do
+
 
 ! Initialize microphysics arrays
    if (zm_microp) call zm_microp_st_ini(microp_st,loc_microp_st,ncol)
@@ -1031,6 +1033,16 @@ subroutine zm_convr(lchnk   ,ncol    , &
          evpg (i,k) = evpg (i,k)* (zfg(i,k)-zfg(i,k+1))/dp(i,k)
       end do
    end do
+   
+   ! GAR: assign all points in the gathered array to 0 (chunk iteration)
+   do i = 1, ncol
+      dadt_g(i) = 0._r8
+   end do
+
+   ! GAR: now, populate gathered points (gathered point iteration)
+   do i = 1, lengath
+      dadt_g(i) = dadt_nstep(nstep, ideep(i))
+   end do
 
    call closure(lchnk   , &
                 qg      ,tg      ,pg      ,zg      ,sg      , &
@@ -1040,7 +1052,13 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 qlg     ,dsubcld ,mb      ,capeg   ,tlg     , &
                 lclg    ,lelg    ,jt      ,maxg    ,1       , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
-                msg     ,capelmt_wk, dadt_nstep)
+                msg     ,capelmt_wk, dadt_nstep, dadt_g, delt)
+
+   ! GAR: ungather points
+   do i = 1, lengath
+      dadt_nstep(nstep+1, i) = dadt_g(ideep(i))
+   end do
+
 !
 ! limit cloud base mass flux to theoretical upper bound.
 !
@@ -3814,7 +3832,7 @@ subroutine closure(lchnk   , &
                    ql      ,dsubcld ,mb      ,cape    ,tl      , &
                    lcl     ,lel     ,jt      ,mx      ,il1g    , &
                    il2g    ,rd      ,grav    ,cp      ,rl      , &
-                   msg     ,capelmt, dadt_nstep)
+                   msg     ,capelmt, dadt_nstep, dadt_g, delt)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -3848,7 +3866,6 @@ subroutine closure(lchnk   , &
    real(r8), intent(inout) :: t(pcols,pver)        ! temperature
    real(r8), intent(inout) :: p(pcols,pver)        ! pressure (mb)
    real(r8), intent(inout) :: mb(pcols)            ! cloud base mass flux
-   real(r8), intent(inout):: dadt_nstep(pcols, dyn_time_lvls) ! GAR: dadt pull
 
    real(r8), intent(in) :: z(pcols,pver)        ! height (m)
    real(r8), intent(in) :: s(pcols,pver)        ! normalized dry static energy
@@ -3907,9 +3924,11 @@ subroutine closure(lchnk   , &
    real(r8) rd
    real(r8) rl
 
-   ! GR dA/dt modifications
-   ! real(r8), dimension(:,:)  :: da(pcols, dyn_time_lvls)         ! physics buffer pointer
-   integer                   :: nstep      ! current timestep number
+   ! GAR: dA/dt modifications
+   real(r8), intent(inout) :: dadt_nstep(100, pcols)    ! da/dt pull (dimensions of time and pcols)
+   real(r8), intent(inout) :: dadt_g(pcols)             ! array with gathered points and zeroes otherwise
+   integer                 :: nstep                     ! current timestep number
+   real(r8)                   delt                      ! length of model time-step in seconds.
 
    nstep = get_nstep()
 
@@ -4025,16 +4044,31 @@ subroutine closure(lchnk   , &
          endif
       end do
    end do
+ 
+   ! -----------------------------------------------------------------------------------------
+   ! GAR: Perform da/dt (dadt) averaging operations and diagnostics here
 
-   write(iulog,*) 'zm_conv closure: nstep', nstep
-   write(iulog,*) 'zm_conv da/dt: dadt', dadt
+   ! Populate the array with da/dt over gathered points
+   do i = il1g, il2g
+      dadt_g(i) = dadt(i)
+   end do  
 
-   ! GR - incorporate time-averaging to da/dt before implemented to mass flux, mb
-   ! if (is_first_step() .or. is_second_step()) then
-   !    da(:, nstep+1) = dadt
-   ! else
-   !   da(:, nstep) = (dadt + da(:, nstep-1) + da(:, nstep-2))/3.0
-   ! endif
+   ! If in the first 2 steps, dadt will be equal to itself
+   ! Else, use the averaged values of the last 3 steps
+   do i = il1g, il2g
+      if (is_first_step() .or. is_second_step()) then
+         dadt(i) = dadt(i)
+      else
+         write(iulog, *) "[zm_conv.F90] before averaging: da/dt(i) = ", dadt(i), &
+                                                       "; da/dt(nstep-1, i): ", dadt_nstep(nstep-1, i), &
+                                                       "; da/dt(nstep-2, i): ", dadt_nstep(nstep-2, i)  
+         dadt(i) = (dadt(i) + dadt_nstep(nstep-1, i) + dadt_nstep(nstep-2, i))/3.0 
+         write(iulog, *) "[zm_conv.F90] after averaging: da/dt(i) = ", dadt(i)
+      endif
+   end do
+   ! ------------------------------------------------------------------------------------------
+   
+   write(iulog,*) '----> [zm_conv.F90] closure: nstep', nstep
 
    do i = il1g,il2g
       ! GR (2024-06-17): this feeds into calculation of the cloud-base mass flux

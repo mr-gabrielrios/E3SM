@@ -229,7 +229,7 @@ subroutine phys_register
     call pbuf_add_field('static_ener_ac', 'global', dtype_r8, (/pcols/), static_ener_ac_idx)
     call pbuf_add_field('water_vap_ac',   'global', dtype_r8, (/pcols/), water_vap_ac_idx)
     ! GAR: add field to dadt
-    call pbuf_add_field('DADT_AVG', 'global', dtype_r8, (/pcols, dyn_time_lvls/), dadt_avg_idx)
+    call pbuf_add_field('DADT_AVG', 'global', dtype_r8, (/100, pcols/), dadt_avg_idx)
 
     ! check energy package
     call check_energy_register
@@ -2182,10 +2182,11 @@ subroutine tphysbc (ztodt,               &
     ! 
     !-----------------------------------------------------------------------
 
-    use physics_buffer,          only : physics_buffer_desc, pbuf_get_field
-    use physics_buffer,          only : pbuf_get_index, pbuf_old_tim_idx
+    use physics_buffer,          only : physics_buffer_desc, pbuf_get_field, pbuf_set_field
+    use physics_buffer,          only : pbuf_get_index, pbuf_old_tim_idx  
     use physics_buffer,          only : col_type_subcol, dyn_time_lvls
     use shr_kind_mod,    only: r8 => shr_kind_r8
+    use time_manager,       only: get_nstep, is_first_step, is_first_restart_step
 
     use stratiform,      only: stratiform_tend
     use microp_driver,   only: microp_driver_tend
@@ -2352,7 +2353,7 @@ subroutine tphysbc (ztodt,               &
     real(r8):: md(pcols,pver)
     real(r8):: ed(pcols,pver)
     real(r8):: dp(pcols,pver)
-    real(r8):: dadt_nstep(pcols, dyn_time_lvls) ! GAR: da/dt for the current timestep    
+    real(r8):: dadt_nstep(100, pcols) ! GAR: da/dt for the current timestep    
     real(r8), pointer, dimension(:,:) :: dadt_avg   ! GAR: da/dt average    
 
     ! wg layer thickness in mbs (between upper/lower interface).
@@ -2651,18 +2652,15 @@ end if
     ! Moist convection
     !===================================================
 
-    ! Get field data for da/dt
-    ! call pbuf_get_field(pbuf, da_idx, da)
-    
     call t_startf('moist_convection')
     !
     ! Since the PBL doesn't pass constituent perturbations, they
     ! are zeroed here for input to the moist convection routine
     !
     ! GAR: dadt modification
+    
     call pbuf_get_field(pbuf, dadt_avg_idx, dadt_avg)
-    dadt_nstep(:, :) = dadt_avg 
- 
+   
     call t_startf ('convect_deep_tend')
     call convect_deep_tend(  &
          cmfmc,      cmfcme,             &
@@ -2670,8 +2668,12 @@ end if
          rliq,       rice, &
          ztodt,   &
          state,   ptend, cam_in%landfrac, pbuf, mu, eu, du, md, ed, dp,   &
-         dsubcld, jt, maxg, ideep, lengath, dadt_nstep) 
+         dsubcld, jt, maxg, ideep, lengath, dadt_avg) 
     call t_stopf('convect_deep_tend')
+
+    write(iulog, *) "[physpkg.F90] Physics step count number: #", nstep
+
+    call pbuf_set_field(pbuf, dadt_avg_idx, dadt_avg)
 
     call physics_update(state, ptend, ztodt, tend)
     

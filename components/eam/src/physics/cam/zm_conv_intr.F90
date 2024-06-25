@@ -699,7 +699,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8), intent(out):: md(pcols,pver) 
    real(r8), intent(out):: ed(pcols,pver) 
    real(r8), intent(out):: dp(pcols,pver)
-   real(r8), intent(inout):: dadt_nstep(pcols, dyn_time_lvls) ! GAR: dadt pull 
+   real(r8), intent(inout):: dadt_nstep(100, pcols) ! GAR: dadt pull 
    
    ! wg layer thickness in mbs (between upper/lower interface).
    real(r8), intent(out):: dsubcld(pcols) 
@@ -1190,6 +1190,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    end if
 
    call outfld('DCAPE', dcape, pcols, lchnk)
+   call outfld('DADT_AVG', dadt_nstep, pcols, lchnk)
    call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
 
    ! ----------------------------------------------------------------------------------
