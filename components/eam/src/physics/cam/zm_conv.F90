@@ -520,7 +520,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8), intent(inout) :: dcape(pcols)           ! output dynamical CAPE
    real(r8), intent(out) :: z(pcols,pver)              ! w  grid slice of ambient mid-layer height in metres.
    real(r8), intent(inout):: dadt_nstep(100, pcols)     ! GAR: dadt pull
-   real(r8) dadt_g(pcols)                               ! GAR: dadt gathered points
+   real(r8) dadt_g(100, pcols)                          ! GAR: dadt gathered points
    integer nstep
 
    real(r8) zs(pcols)
@@ -665,6 +665,10 @@ subroutine zm_convr(lchnk   ,ncol    , &
    logical doliq
 
    integer dcapemx(pcols)  ! launching level index saved from 1st call for CAPE calculation;  used in 2nd call when DCAPE-ULL active
+
+   ! GAR: get iterand timestep
+   nstep = get_nstep()
+
 
 !
 !--------------------------Data statements------------------------------
@@ -862,6 +866,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
       capelmt_wk = 0.0_r8
 
    lengath = 0
+
    do i=1,ncol
      if (trigdcape_ull .or. trig_dcape_only) then
      ! DCAPE-ULL
@@ -871,7 +876,8 @@ subroutine zm_convr(lchnk   ,ncol    , &
               lengath = lengath + 1
               index(lengath) = i
            end if
-       else if (cape(i) > 0.0_r8 .and. dcape(i) > trigdcapelmt) then
+       ! GAR: check if da/dt value from previous timestep is nonzero
+       else if ((cape(i) > 0.0_r8 .and. dcape(i) > trigdcapelmt)) then
            ! use constant 0 or a separate threshold for capt because capelmt is for default trigger
            lengath = lengath + 1
            index(lengath) = i
@@ -1034,16 +1040,25 @@ subroutine zm_convr(lchnk   ,ncol    , &
       end do
    end do
    
-   ! GAR: assign all points in the gathered array to 0 (chunk iteration)
-   do i = 1, ncol
-      dadt_g(i) = 0._r8
+   ! GAR: populate all points in the gathered array with 0 (chunk iteration)
+   !      Note that dadt_g is 2-dimensional s/t previous timesteps are 
+   !      gathered and passed into closure
+   do k = 1, nstep
+      do i = 1, ncol
+         dadt_g(k, i) = 0._r8
+      end do
    end do
 
-   ! GAR: now, populate gathered points (gathered point iteration)
-   do i = 1, lengath
-      dadt_g(i) = dadt_nstep(nstep, ideep(i))
+   ! GAR: now, populate gathered points with existing dadt values (gathered point iteration)
+   do k = 1, nstep
+      do i = 1, lengath
+         dadt_g(k, i) = dadt_nstep(k, ideep(i))
+         write(iulog, *) "[PRE, zm_conv.F90], pre-closure dadt_g:", dadt_g(k, i), "at ncol index", ideep(i), "and lengath", i, "at time step", nstep 
+      end do
    end do
-
+   
+   ! GAR: call the closure routine where dadt_g will be passed in to grab
+   !      the next computed value of dadt
    call closure(lchnk   , &
                 qg      ,tg      ,pg      ,zg      ,sg      , &
                 tpg     ,qs      ,qu      ,su      ,mc      , &
@@ -1052,11 +1067,15 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 qlg     ,dsubcld ,mb      ,capeg   ,tlg     , &
                 lclg    ,lelg    ,jt      ,maxg    ,1       , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
-                msg     ,capelmt_wk, dadt_nstep, dadt_g, delt)
+                msg     ,capelmt_wk, dadt_g, delt)
+   
+   ! GAR: initialize the next timestep values with 0 
+   dadt_nstep(nstep+1, :) = 0._r8
 
-   ! GAR: ungather points
+   ! GAR: assign gathered points from dadt_g into the corresponding chunk indices for dadt
    do i = 1, lengath
-      dadt_nstep(nstep+1, i) = dadt_g(ideep(i))
+      write(iulog, *) "[POST, zm_conv.F90], dadt_g:", dadt_g(nstep+1, i) 
+      dadt_nstep(nstep+1, ideep(i)) = dadt_g(nstep+1, i)
    end do
 
 !
@@ -3832,7 +3851,7 @@ subroutine closure(lchnk   , &
                    ql      ,dsubcld ,mb      ,cape    ,tl      , &
                    lcl     ,lel     ,jt      ,mx      ,il1g    , &
                    il2g    ,rd      ,grav    ,cp      ,rl      , &
-                   msg     ,capelmt, dadt_nstep, dadt_g, delt)
+                   msg     ,capelmt, dadt_g, delt)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -3925,8 +3944,7 @@ subroutine closure(lchnk   , &
    real(r8) rl
 
    ! GAR: dA/dt modifications
-   real(r8), intent(inout) :: dadt_nstep(100, pcols)    ! da/dt pull (dimensions of time and pcols)
-   real(r8), intent(inout) :: dadt_g(pcols)             ! array with gathered points and zeroes otherwise
+   real(r8), intent(inout) :: dadt_g(100, pcols)             ! array with gathered points and zeroes otherwise
    integer                 :: nstep                     ! current timestep number
    real(r8)                   delt                      ! length of model time-step in seconds.
 
@@ -4050,26 +4068,24 @@ subroutine closure(lchnk   , &
 
    ! Populate the array with da/dt over gathered points
    do i = il1g, il2g
-      dadt_g(i) = dadt(i)
-   end do  
+      dadt_g(nstep+1, i) = dadt(i)
+   end do
+
+   write(iulog, *) "    [IN: closure, zm_conv.F90], nstep:", nstep
 
    ! If in the first 2 steps, dadt will be equal to itself
    ! Else, use the averaged values of the last 3 steps
-   do i = il1g, il2g
-      if (is_first_step() .or. is_second_step()) then
-         dadt(i) = dadt(i)
-      else
-         write(iulog, *) "[zm_conv.F90] before averaging: da/dt(i) = ", dadt(i), &
-                                                       "; da/dt(nstep-1, i): ", dadt_nstep(nstep-1, i), &
-                                                       "; da/dt(nstep-2, i): ", dadt_nstep(nstep-2, i)  
-         dadt(i) = (dadt(i) + dadt_nstep(nstep-1, i) + dadt_nstep(nstep-2, i))/3.0 
-         write(iulog, *) "[zm_conv.F90] after averaging: da/dt(i) = ", dadt(i)
-      endif
-   end do
+   ! do i = il1g, il2g
+   !    if (.not. is_first_step() .and. .not. is_second_step()) then
+   !       write(iulog, *) "[zm_conv.F90] before averaging: da/dt(i) = ", dadt(i), &
+   !                                                   "; da/dt(nstep-1, i): ", dadt_g(nstep-1, i), &
+   !                                                   "; da/dt(nstep-2, i): ", dadt_g(nstep-2, i)  
+   !       dadt(i) = (dadt_g(nstep, i) + dadt_g(nstep-1, i) + dadt_g(nstep-2, i))/3.0 
+   !       write(iulog, *) "[zm_conv.F90] after averaging: da/dt(i) = ", dadt(i)
+   !    endif
+   ! end do
    ! ------------------------------------------------------------------------------------------
    
-   write(iulog,*) '----> [zm_conv.F90] closure: nstep', nstep
-
    do i = il1g,il2g
       ! GR (2024-06-17): this feeds into calculation of the cloud-base mass flux
       dltaa = -1._r8* (cape(i)-capelmt)

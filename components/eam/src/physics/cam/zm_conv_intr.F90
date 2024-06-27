@@ -246,7 +246,7 @@ subroutine zm_conv_init(pref_edge)
 
     call addfld ('CAPE_ZM',horiz_only, 'A',   'J/kg', 'Convectively available potential energy')
     call addfld ('DCAPE',  horiz_only, 'A',   'J/kg', 'change rate of Convectively available potential energy')
-    call addfld ('DADT_AVG',  horiz_only, 'A',   'J/kg', 'change rate of convectively available potential energy')
+    call addfld ('DADT_AVG', horiz_only, 'A',   'J/kg', 'change rate of convectively available potential energy')
     call addfld ('FREQZM',horiz_only  ,'A','fraction', 'Fractional occurance of ZM convection') 
 
     call addfld ('ZMMTT',     (/ 'lev' /), 'A', 'K/s', 'T tendency - ZM convective momentum transport')
@@ -1190,7 +1190,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    end if
 
    call outfld('DCAPE', dcape, pcols, lchnk)
-   call outfld('DADT_AVG', dadt_nstep, pcols, lchnk)
+   call outfld('DADT_AVG', dadt_nstep(nstep, :ncol), pcols, lchnk)
    call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
 
    ! ----------------------------------------------------------------------------------

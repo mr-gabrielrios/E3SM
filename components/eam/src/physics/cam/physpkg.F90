@@ -2672,8 +2672,9 @@ end if
     call t_stopf('convect_deep_tend')
 
     write(iulog, *) "[physpkg.F90] Physics step count number: #", nstep
+    write(iulog, *) "---->[physpkg.F90] dadt_avg", dadt_avg
 
-    call pbuf_set_field(pbuf, dadt_avg_idx, dadt_avg)
+    ! call pbuf_set_field(pbuf, dadt_avg_idx, dadt_avg)
 
     call physics_update(state, ptend, ztodt, tend)
     
