@@ -468,6 +468,7 @@ CONTAINS
 
        if (single_column) then
          call apply_iop_forcing(dyn_state%elem,hvcoord,hybrid,TimeLevel,3,.false.,nets,nete)
+         write(iulog, *) "[dyn_core.F90] single column operating in DP config"
        endif
 
 #ifdef HORIZ_OPENMP

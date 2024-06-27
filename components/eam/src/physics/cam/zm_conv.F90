@@ -4066,30 +4066,21 @@ subroutine closure(lchnk   , &
    ! -----------------------------------------------------------------------------------------
    ! GAR: Perform da/dt (dadt) averaging operations and diagnostics here
 
-   ! Populate the array with da/dt over gathered points
-   do i = il1g, il2g
-      dadt_g(nstep+1, i) = dadt(i)
-   end do
-
-   write(iulog, *) "    [IN: closure, zm_conv.F90], nstep:", nstep
-
-   ! If in the first 2 steps, dadt will be equal to itself
-   ! Else, use the averaged values of the last 3 steps
-   ! do i = il1g, il2g
-   !    if (.not. is_first_step() .and. .not. is_second_step()) then
-   !       write(iulog, *) "[zm_conv.F90] before averaging: da/dt(i) = ", dadt(i), &
-   !                                                   "; da/dt(nstep-1, i): ", dadt_g(nstep-1, i), &
-   !                                                   "; da/dt(nstep-2, i): ", dadt_g(nstep-2, i)  
-   !       dadt(i) = (dadt_g(nstep, i) + dadt_g(nstep-1, i) + dadt_g(nstep-2, i))/3.0 
-   !       write(iulog, *) "[zm_conv.F90] after averaging: da/dt(i) = ", dadt(i)
-   !    endif
-   ! end do
-   ! ------------------------------------------------------------------------------------------
-   
    do i = il1g,il2g
       ! GR (2024-06-17): this feeds into calculation of the cloud-base mass flux
       dltaa = -1._r8* (cape(i)-capelmt)
-      ! GR (2024-06-17): here is a modification to the cloud-base mass flux
+      
+      ! GR (2024-06-27): put dltaa into the gathered array (see Yun et al. 2017 - Eq 4)
+      dadt_g(nstep + 1, i) = dltaa
+      
+      if (.not. is_first_step() .and. .not. is_second_step()) then
+         write(iulog, *) "[zm_conv.F90] before averaging: dltaa(i) = ", dadt(i), &
+                                                     "; dltaa(nstep-1, i): ", dadt_g(nstep-1, i), &
+                                                     "; dltaa(nstep-2, i): ", dadt_g(nstep-2, i)  
+         dltaa = (dadt_g(nstep+1, i) + dadt_g(nstep, i) + dadt_g(nstep-1, i))/3.0 
+         write(iulog, *) "[zm_conv.F90] after averaging: dltaa(ii) = ", dltaa
+      endif
+      
       ! this is highlighed because it's an output quantity
       if (dadt(i) /= 0._r8) mb(i) = max(dltaa/tau/dadt(i),0._r8)
       if (zm_microp .and. mx(i)-jt(i) < 2._r8) mb(i) =0.0_r8
