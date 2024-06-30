@@ -85,6 +85,10 @@ module physpkg
   integer ::  gas_ac_idx         = 0
   integer :: species_class(pcnst)  = -1 !BSINGH: Moved from modal_aero_data.F90 as it is being used in second call to zm deep convection scheme (convect_deep_tend_2)
 
+  ! GAR: set parameters used to control dCAPE/dt (known as dltaa) averaging
+  integer :: total_nsteps = 800 ! GAR
+  integer :: nstep_avg = 10 
+
   save
 
   ! Public methods
@@ -229,7 +233,7 @@ subroutine phys_register
     call pbuf_add_field('static_ener_ac', 'global', dtype_r8, (/pcols/), static_ener_ac_idx)
     call pbuf_add_field('water_vap_ac',   'global', dtype_r8, (/pcols/), water_vap_ac_idx)
     ! GAR: add field to dadt
-    call pbuf_add_field('DADT_AVG', 'global', dtype_r8, (/100, pcols/), dadt_avg_idx)
+    call pbuf_add_field('DADT_AVG', 'global', dtype_r8, (/total_nsteps, pcols/), dadt_avg_idx)
 
     ! check energy package
     call check_energy_register
@@ -2353,7 +2357,7 @@ subroutine tphysbc (ztodt,               &
     real(r8):: md(pcols,pver)
     real(r8):: ed(pcols,pver)
     real(r8):: dp(pcols,pver)
-    real(r8):: dadt_nstep(100, pcols) ! GAR: da/dt for the current timestep    
+
     real(r8), pointer, dimension(:,:) :: dadt_avg   ! GAR: da/dt average    
 
     ! wg layer thickness in mbs (between upper/lower interface).
@@ -2668,11 +2672,11 @@ end if
          rliq,       rice, &
          ztodt,   &
          state,   ptend, cam_in%landfrac, pbuf, mu, eu, du, md, ed, dp,   &
-         dsubcld, jt, maxg, ideep, lengath, dadt_avg) 
+         dsubcld, jt, maxg, ideep, lengath, dadt_avg, total_nsteps, nstep_avg) 
     call t_stopf('convect_deep_tend')
 
     write(iulog, *) "[physpkg.F90] Physics step count number: #", nstep
-    write(iulog, *) "---->[physpkg.F90] dadt_avg", dadt_avg
+    ! write(iulog, *) "---->[physpkg.F90] dadt_avg", dadt_avg
 
     ! call pbuf_set_field(pbuf, dadt_avg_idx, dadt_avg)
 

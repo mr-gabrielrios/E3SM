@@ -246,7 +246,8 @@ subroutine zm_conv_init(pref_edge)
 
     call addfld ('CAPE_ZM',horiz_only, 'A',   'J/kg', 'Convectively available potential energy')
     call addfld ('DCAPE',  horiz_only, 'A',   'J/kg', 'change rate of Convectively available potential energy')
-    call addfld ('DADT_AVG', horiz_only, 'A',   'J/kg', 'change rate of convectively available potential energy')
+    call addfld ('DADT',  horiz_only, 'A',   'J/kg', 'change rate of Convectively available potential energy')
+    call addfld ('DADT_AVG', horiz_only, 'A',   'J/kg', 'time-averaged change rate of convectively available potential energy')
     call addfld ('FREQZM',horiz_only  ,'A','fraction', 'Fractional occurance of ZM convection') 
 
     call addfld ('ZMMTT',     (/ 'lev' /), 'A', 'K/s', 'T tendency - ZM convective momentum transport')
@@ -648,7 +649,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
      ztodt   , &
      jctop   ,jcbot , &
      state   ,ptend_all   ,landfrac,  pbuf, mu, eu, &
-     du, md, ed, dp, dsubcld, jt, maxg, ideep, lengath, dadt_nstep) 
+     du, md, ed, dp, dsubcld, jt, maxg, ideep, lengath, dadt_avg, total_nsteps, nstep_avg) 
 
    use cam_history,   only: outfld
    use physics_types, only: physics_state, physics_ptend
@@ -699,7 +700,10 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8), intent(out):: md(pcols,pver) 
    real(r8), intent(out):: ed(pcols,pver) 
    real(r8), intent(out):: dp(pcols,pver)
-   real(r8), intent(inout):: dadt_nstep(100, pcols) ! GAR: dadt pull 
+   integer, intent(in) :: total_nsteps
+   integer, intent(in) :: nstep_avg
+   real(r8), intent(inout):: dadt_avg(total_nsteps, pcols) ! GAR: dadt pull 
+   real(r8) :: dadt_out(pcols) ! GAR: dadt pull 
    
    ! wg layer thickness in mbs (between upper/lower interface).
    real(r8), intent(out):: dsubcld(pcols) 
@@ -1046,7 +1050,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
                     lengath ,ql      ,rliq  ,landfrac,  &
                     t_star, q_star, dcape, &  
                     aero(lchnk), qi, dif, dnlf, dnif, dsf, dnsf, sprd, rice, frz, mudpcu, &
-                    lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed, dadt_nstep)
+                    lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed, dadt_avg, total_nsteps, dadt_out, nstep_avg)
     
    if (zm_microp) then
      dlftot(:ncol,:pver) = dlf(:ncol,:pver) + dif(:ncol,:pver) + dsf(:ncol,:pver)
@@ -1190,7 +1194,8 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    end if
 
    call outfld('DCAPE', dcape, pcols, lchnk)
-   call outfld('DADT_AVG', dadt_nstep(nstep, :ncol), pcols, lchnk)
+   call outfld('DADT', dadt_out, pcols, lchnk)
+   call outfld('DADT_AVG', dadt_avg(nstep, :ncol), pcols, lchnk)
    call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
 
    ! ----------------------------------------------------------------------------------
