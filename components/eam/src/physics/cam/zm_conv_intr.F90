@@ -58,9 +58,7 @@ module zm_conv_intr
       dnsfzm_idx,    &     ! detrained convective snow num concen.
       prec_dp_idx,   &
       snow_dp_idx,   &
-      wuc_idx,       &
-      dadt_avg_idx               ! GR: da/dt modification  
-       
+      wuc_idx
 
 ! DCAPE-ULL
    integer :: t_star_idx       !t_star index in physics buffer
@@ -81,7 +79,6 @@ module zm_conv_intr
    integer  ::    mudpcu_idx       = 0
    integer  ::    icimrdp_idx      = 0
    
-   integer  ::    dcape_avg_idx    = 0 ! GR
 
    logical :: old_snow  = .true.   ! set true to use old estimate of snow production in zm_conv_evap
                                    ! set false to use snow production from zm
@@ -125,7 +122,7 @@ subroutine zm_conv_register
 
 ! vertical velocity (m/s)
    call pbuf_add_field('WUC','global',dtype_r8,(/pcols,pver/), wuc_idx)
-   
+
 
 ! DCAPE-UPL
 
@@ -1051,7 +1048,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
                     t_star, q_star, dcape, &  
                     aero(lchnk), qi, dif, dnlf, dnif, dsf, dnsf, sprd, rice, frz, mudpcu, &
                     lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed, dadt_avg, total_nsteps, dadt_out, nstep_avg)
-    
+   
    if (zm_microp) then
      dlftot(:ncol,:pver) = dlf(:ncol,:pver) + dif(:ncol,:pver) + dsf(:ncol,:pver)
    else
@@ -1193,11 +1190,12 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
 
    end if
 
+
    call outfld('DCAPE', dcape, pcols, lchnk)
    call outfld('DADT', dadt_out, pcols, lchnk)
    call outfld('DADT_AVG', dadt_avg(nstep, :ncol), pcols, lchnk)
    call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
-
+   
    ! ----------------------------------------------------------------------------------
 
 !

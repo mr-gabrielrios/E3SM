@@ -876,23 +876,19 @@ subroutine zm_convr(lchnk   ,ncol    , &
    ! GAR: this is meant to populate the array `include_previous_dcape`, which flags cells 
    !      that have seen positive CAPE tendency (dcape) within the backwards-facing averaging window
    ! GAR: populate integer array
-   do i=1,ncol
+   do i=1, ncol
       include_previous_dcape(i) = 0 
    end do
    ! GAR: now, increment the array at the iterand index if positive dcape is detected
    if (nstep > nstep_avg) then
       do k=(nstep - nstep_avg + 1), nstep
-         do i=1,ncol
-             if (dadt_avg(k, i) < -capelmt) then
+         do i=1, ncol
+             if (dadt_avg(k, i) < 0) then
                 include_previous_dcape(i) = include_previous_dcape(i) + 1
              end if
          end do
       end do
    end if
-
-   ! do i=1,ncol
-      ! write(iulog, *) "----> [zm_conv.F90] dcape flag array:", include_previous_dcape(i)
-   ! end do
 
    do i=1,ncol
      if (trigdcape_ull .or. trig_dcape_only) then
@@ -918,6 +914,12 @@ subroutine zm_convr(lchnk   ,ncol    , &
          index(lengath) = i
       end if
      end if
+   end do
+  
+   ! GAR: populate the arrays before the first return if no gathered points are found 
+   do i = 1, ncol 
+      dadt_avg(nstep, i) = 0._r8
+      dadt_out(i) = 0._r8
    end do
 
    if (lengath.eq.0) return
@@ -1073,21 +1075,9 @@ subroutine zm_convr(lchnk   ,ncol    , &
    ! GAR: populate all points in the gathered array with 0 (chunk iteration)
    !      Note that dadt_g is 2-dimensional s/t previous timesteps are 
    !      gathered and passed into closure
-   ! do k = 1, nstep
-   !    do i = 1, ncol
-   !       dadt_g(k, i) = 0._r8
-   !    end do
-   ! end do
-   ! 
-   ! do i = 1, ncol
-   !    dadt_out_g(i) = 0._r8
-   ! end do
-
-   ! GAR: now, populate gathered points with existing dadt values (gathered point iteration)
    do k = 1, nstep
-      do i = 1, lengath
+      do i = 1, lengath 
          dadt_g(k, i) = dadt_avg(k, ideep(i))
-         ! write(iulog, *) "[PRE, zm_conv.F90], pre-closure dadt_g:", dadt_g(k, i), "at ncol index", ideep(i), "and lengath", i, "at time step", nstep 
       end do
    end do
    
@@ -1103,13 +1093,9 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
                 msg     ,capelmt_wk, dadt_g, delt, total_nsteps, dadt_out_g, nstep_avg)
    
-   ! GAR: initialize the next timestep values with 0 
-   ! dadt_avg(nstep+1, :) = 0._r8
-
    ! GAR: assign gathered points from dadt_g into the corresponding chunk indices for dadt
    do i = 1, lengath
-      ! write(iulog, *) "[POST, zm_conv.F90], dadt_g:", dadt_g(nstep+1, i) 
-      dadt_avg(nstep, ideep(i)) = dadt_g(nstep+1, i)
+      dadt_avg(nstep, ideep(i)) = dadt_g(nstep, i)
       dadt_out(ideep(i)) = dadt_out_g(i)
    end do
 
@@ -1491,6 +1477,10 @@ subroutine zm_convr(lchnk   ,ncol    , &
 
 ! Deallocate microphysics arrays.
    if (zm_microp) call zm_microp_st_dealloc(loc_microp_st)
+   
+   do i = 1, lengath
+      write(iulog, *) "--------------> [zm_conv.F90] gathered loop, post-closure: dadt_avg(nstep, ideep(i)):", dadt_avg(nstep, ideep(i)), "dadt_out(ideep(i)): ", dadt_out(ideep(i))
+   end do
 
    return
 end subroutine zm_convr
@@ -4107,15 +4097,13 @@ subroutine closure(lchnk   , &
       
       ! GAR (2024-06-27): put dltaa into the gathered array (see Yun et al. 2017 - Eq 4)
       dadt_out_g(i) = dltaa
-      
-      dadt_g(nstep + 1, i) = dltaa
+      dadt_g(nstep, i) = dltaa
 
       ! GAR: perform the averaging
       if (nstep > nstep_avg) then
-         write(iulog, *) "averaging length: ", nstep, nstep_avg + 1
-         dadt_out_g(i) = sum(dadt_g((nstep - nstep_avg + 1):(nstep+1), i), 1)/size(dadt_g((nstep - nstep_avg + 1):(nstep+1), i), 1)
+         dadt_out_g(i) = sum(dadt_g((nstep - nstep_avg + 1):nstep, i))/nstep_avg
          dltaa = dadt_out_g(i)
-      endif
+       endif
       
       ! this is highlighed because it's an output quantity
       if (dadt(i) /= 0._r8) mb(i) = max(dltaa/tau/dadt(i),0._r8)
