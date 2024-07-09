@@ -64,6 +64,7 @@ module zm_conv
    real(r8) :: zmconv_c0_ocn         = unset_r8    
    real(r8) :: zmconv_ke             = unset_r8 
    real(r8) :: zmconv_tau            = unset_r8   
+   real(r8) :: zmconv_dcape_avg_time = unset_r8   
    real(r8) :: zmconv_dmpdz          = unset_r8   
    real(r8) :: zmconv_alfa           = unset_r8   
    real(r8) :: zmconv_tiedke_add     = unset_r8   
@@ -109,6 +110,7 @@ module zm_conv
    integer  :: num_cin        = unset_int !number of negative buoyancy regions that are allowed before the conv. top and CAPE calc are completed
    integer  :: mx_bot_lyr_adj = unset_int !bottom layer adjustment for setting "launching" level(mx) (to be at maximum moist static energy).
    real(r8) tau   ! convective time scale
+   real(r8) zm_dcape_avg_time 
    real(r8),parameter :: c1 = 6.112_r8
    real(r8),parameter :: c2 = 17.67_r8
    real(r8),parameter :: c3 = 243.5_r8
@@ -159,7 +161,7 @@ subroutine zmconv_readnl(nlfile)
            zmconv_trig_dcape_only, zmconv_trig_ull_only, zmconv_microp, zmconv_auto_fac,&
            zmconv_accr_fac, zmconv_micro_dcs, zmconv_clos_dyn_adj, zmconv_tpert_fix,    &
            zmconv_MCSP_heat_coeff, zmconv_MCSP_moisture_coeff, &
-           zmconv_MCSP_uwind_coeff, zmconv_MCSP_vwind_coeff   
+           zmconv_MCSP_uwind_coeff, zmconv_MCSP_vwind_coeff, zmconv_dcape_avg_time   
    !-----------------------------------------------------------------------------
 
    zmconv_tau = 3600._r8
@@ -185,6 +187,7 @@ subroutine zmconv_readnl(nlfile)
       trig_dcape_only  = zmconv_trig_dcape_only
       trig_ull_only    = zmconv_trig_ull_only
       zm_microp        = zmconv_microp
+      zm_dcape_avg_time = zmconv_dcape_avg_time
       clos_dyn_adj     = zmconv_clos_dyn_adj
       tpert_fix        = zmconv_tpert_fix
       tiedke_add       = zmconv_tiedke_add
@@ -247,6 +250,7 @@ subroutine zmconv_readnl(nlfile)
    call mpibcast(c0_ocn,            1, mpir8,  0, mpicom)
    call mpibcast(ke,                1, mpir8,  0, mpicom)
    call mpibcast(tau,               1, mpir8,  0, mpicom)
+   call mpibcast(zm_dcape_avg_time, 1, mpir8,  0, mpicom)
    call mpibcast(dmpdz,             1, mpir8,  0, mpicom)
    call mpibcast(alfa_scalar,       1, mpir8,  0, mpicom)
    call mpibcast(trigdcape_ull,     1, mpilog, 0, mpicom)
@@ -332,7 +336,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
                     aero    ,qi      ,dif     ,dnlf    ,dnif    , & 
                     dsf     ,dnsf    ,sprd    ,rice    ,frz     , &
                     mudpcu  ,lambdadpcu, microp_st, wuc, &
-                    msetrans, hmn, z, hu, hd, dadt_avg, total_nsteps, dadt_out, nstep_avg)
+                    msetrans, hmn, z, hu, hd, dadt_avg, total_nsteps, dadt_out)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -519,10 +523,12 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8), intent(out) :: rliq(pcols)   ! reserved liquid (not yet in cldliq) for energy integrals
    real(r8), intent(inout) :: dcape(pcols)           ! output dynamical CAPE
    real(r8), intent(out) :: z(pcols,pver)              ! w  grid slice of ambient mid-layer height in metres.
+   
    ! GAR: define all variables relevant to CAPE averaging here
    integer, intent(in) :: total_nsteps
-   integer, intent(in) :: nstep_avg
+   ! integer, intent(in) :: nstep_avg
    real(r8), intent(inout):: dadt_avg(total_nsteps, pcols)     ! GAR: dadt pull
+   real(r8) dadt_container(total_nsteps, pcols)                ! GAR: dadt container
    real(r8) dadt_g(total_nsteps, pcols)                        ! GAR: dadt gathered points
    real(r8), intent(out) :: dadt_out(pcols)                    ! GAR: dadt instantaneous output
    real(r8) :: dadt_out_g(pcols)                               ! GAR: dadt instantaneous output, gathered
@@ -880,8 +886,8 @@ subroutine zm_convr(lchnk   ,ncol    , &
       include_previous_dcape(i) = 0 
    end do
    ! GAR: now, increment the array at the iterand index if positive dcape is detected
-   if (nstep > nstep_avg) then
-      do k=(nstep - nstep_avg + 1), nstep
+   if (nstep > total_nsteps) then
+      do k=1, total_nsteps
          do i=1, ncol
              if (dadt_avg(k, i) < 0) then
                 include_previous_dcape(i) = include_previous_dcape(i) + 1
@@ -915,10 +921,38 @@ subroutine zm_convr(lchnk   ,ncol    , &
       end if
      end if
    end do
-  
+
+   ! GAR: Update the averaging array using the "shifting method"
+   ! In other words, in an array with n averaging timesteps, the values in timesteps 2:n
+   ! will be shifted to a new container at timesteps 1:n-1, then popped back into the original array
+   ! at timesteps 1:n-1
+   if (nstep .ge. total_nsteps) then
+      do k = 1, total_nsteps
+         do i = 1, ncol
+            ! If the iterand timestep (k) is less than the number of averaging timesteps,
+            ! pull the next timestep (k+1) from the averaging array to the container iterand timestep (k)
+            if (k < total_nsteps) then
+               dadt_container(k, i) = dadt_avg(k+1, i)
+            ! Else, populate with 0         
+            else
+               dadt_container(k, i) = 0._r8
+            end if
+         end do
+      end do  
+      ! Now, update the averaging array with the shifted values
+      do k = 1, total_nsteps
+         do i = 1, ncol
+            dadt_avg(k, i) = dadt_container(k, i)
+         end do
+      end do
+   else
+      do i = 1, ncol
+         dadt_avg(nstep, i) = 0._r8
+      end do
+   end if
+
    ! GAR: populate the arrays before the first return if no gathered points are found 
    do i = 1, ncol 
-      dadt_avg(nstep, i) = 0._r8
       dadt_out(i) = 0._r8
    end do
 
@@ -1075,7 +1109,10 @@ subroutine zm_convr(lchnk   ,ncol    , &
    ! GAR: populate all points in the gathered array with 0 (chunk iteration)
    !      Note that dadt_g is 2-dimensional s/t previous timesteps are 
    !      gathered and passed into closure
-   do k = 1, nstep
+   
+   write(iulog, *) "[zm_conv.F90], zm_convr()]: number of averaging timesteps: ", total_nsteps
+
+   do k = 1, total_nsteps 
       do i = 1, lengath 
          dadt_g(k, i) = dadt_avg(k, ideep(i))
       end do
@@ -1091,11 +1128,11 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 qlg     ,dsubcld ,mb      ,capeg   ,tlg     , &
                 lclg    ,lelg    ,jt      ,maxg    ,1       , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
-                msg     ,capelmt_wk, dadt_g, delt, total_nsteps, dadt_out_g, nstep_avg)
+                msg     ,capelmt_wk, dadt_g, delt, total_nsteps, dadt_out_g)
    
    ! GAR: assign gathered points from dadt_g into the corresponding chunk indices for dadt
    do i = 1, lengath
-      dadt_avg(nstep, ideep(i)) = dadt_g(nstep, i)
+      dadt_avg(total_nsteps, ideep(i)) = dadt_g(total_nsteps, i)
       dadt_out(ideep(i)) = dadt_out_g(i)
    end do
 
@@ -1478,10 +1515,6 @@ subroutine zm_convr(lchnk   ,ncol    , &
 ! Deallocate microphysics arrays.
    if (zm_microp) call zm_microp_st_dealloc(loc_microp_st)
    
-   do i = 1, lengath
-      write(iulog, *) "--------------> [zm_conv.F90] gathered loop, post-closure: dadt_avg(nstep, ideep(i)):", dadt_avg(nstep, ideep(i)), "dadt_out(ideep(i)): ", dadt_out(ideep(i))
-   end do
-
    return
 end subroutine zm_convr
 
@@ -3872,7 +3905,7 @@ subroutine closure(lchnk   , &
                    ql      ,dsubcld ,mb      ,cape    ,tl      , &
                    lcl     ,lel     ,jt      ,mx      ,il1g    , &
                    il2g    ,rd      ,grav    ,cp      ,rl      , &
-                   msg     ,capelmt, dadt_g, delt, total_nsteps, dadt_out_g, nstep_avg)
+                   msg     ,capelmt, dadt_g, delt, total_nsteps, dadt_out_g)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -3966,7 +3999,7 @@ subroutine closure(lchnk   , &
 
    ! GAR: dA/dt modifications
    integer, intent(in) :: total_nsteps
-   integer, intent(in) :: nstep_avg
+   ! integer, intent(in) :: nstep_avg
 
    real(r8), intent(inout) :: dadt_g(total_nsteps, pcols)             ! array with gathered points and zeroes otherwise
    real(r8), intent(out)   :: dadt_out_g(pcols)              ! array with gathered points and zeroes otherwise
@@ -4097,11 +4130,11 @@ subroutine closure(lchnk   , &
       
       ! GAR (2024-06-27): put dltaa into the gathered array (see Yun et al. 2017 - Eq 4)
       dadt_out_g(i) = dltaa
-      dadt_g(nstep, i) = dltaa
+      dadt_g(total_nsteps, i) = dltaa
 
       ! GAR: perform the averaging
-      if (nstep > nstep_avg) then
-         dadt_out_g(i) = sum(dadt_g((nstep - nstep_avg + 1):nstep, i))/nstep_avg
+      if (nstep > total_nsteps) then
+         dadt_out_g(i) = sum(dadt_g(1:total_nsteps, i))/total_nsteps
          dltaa = dadt_out_g(i)
        endif
       

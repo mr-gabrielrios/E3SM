@@ -646,7 +646,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
      ztodt   , &
      jctop   ,jcbot , &
      state   ,ptend_all   ,landfrac,  pbuf, mu, eu, &
-     du, md, ed, dp, dsubcld, jt, maxg, ideep, lengath, dadt_avg, total_nsteps, nstep_avg) 
+     du, md, ed, dp, dsubcld, jt, maxg, ideep, lengath, dadt_avg, total_nsteps) 
 
    use cam_history,   only: outfld
    use physics_types, only: physics_state, physics_ptend
@@ -698,7 +698,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8), intent(out):: ed(pcols,pver) 
    real(r8), intent(out):: dp(pcols,pver)
    integer, intent(in) :: total_nsteps
-   integer, intent(in) :: nstep_avg
+   ! integer, intent(in) :: nstep_avg
    real(r8), intent(inout):: dadt_avg(total_nsteps, pcols) ! GAR: dadt pull 
    real(r8) :: dadt_out(pcols) ! GAR: dadt pull 
    
@@ -1047,7 +1047,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
                     lengath ,ql      ,rliq  ,landfrac,  &
                     t_star, q_star, dcape, &  
                     aero(lchnk), qi, dif, dnlf, dnif, dsf, dnsf, sprd, rice, frz, mudpcu, &
-                    lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed, dadt_avg, total_nsteps, dadt_out, nstep_avg)
+                    lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed, dadt_avg, total_nsteps, dadt_out)
    
    if (zm_microp) then
      dlftot(:ncol,:pver) = dlf(:ncol,:pver) + dif(:ncol,:pver) + dsf(:ncol,:pver)
@@ -1193,7 +1193,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
 
    call outfld('DCAPE', dcape, pcols, lchnk)
    call outfld('DADT', dadt_out, pcols, lchnk)
-   call outfld('DADT_AVG', dadt_avg(nstep, :ncol), pcols, lchnk)
+   call outfld('DADT_AVG', dadt_avg(total_nsteps, :ncol), pcols, lchnk)
    call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
    
    ! ----------------------------------------------------------------------------------

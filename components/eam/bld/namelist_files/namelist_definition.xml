@@ -2899,6 +2899,13 @@ Relaxation time in ZM deep convection scheme.
 Default: set by build-namelist
 </entry>
 
+<entry id="zmconv_dcape_avg_time" type="real" category="conv"
+       group="zmconv_nl" valid_values="" >
+Length of time averaging for field 'dadt', which is roughly the CAPE tendency. 
+See Yun et al. (2017) for more information
+Default: set by build-namelist
+</entry>
+
 <entry id="zmconv_dmpdz" type="real" category="conv"
        group="zmconv_nl" valid_values="" >
 Parcel fractional mass entrainment rate
@@ -3201,6 +3208,11 @@ Default: 10
 Type of deep convection scheme employed.  'ZM' for Zhang-McFarlane;
 'off' for none.
 Default: 'ZM'
+</entry>
+
+<entry id="zm_avg_time_sec" type="real" category="conv"
+       group="phys_ctl_nl" valid_values="" >
+Length of time-averaging for CAPE tendency in the Zhang-MacFarlane scheme.
 </entry>
 
 <entry id="microp_scheme" type="char*16" category="conv"

@@ -57,6 +57,8 @@ module physpkg
                              check_energy_gmean, check_energy_gmean_additional_diagn, &
                              print_additional_diagn
 
+  use time_manager, only : get_step_size
+
   implicit none
   private
 
@@ -85,10 +87,6 @@ module physpkg
   integer ::  gas_ac_idx         = 0
   integer :: species_class(pcnst)  = -1 !BSINGH: Moved from modal_aero_data.F90 as it is being used in second call to zm deep convection scheme (convect_deep_tend_2)
 
-  ! GAR: set parameters used to control dCAPE/dt (known as dltaa) averaging
-  integer :: total_nsteps = 800 ! GAR
-  integer :: nstep_avg = 10 
-
   save
 
   ! Public methods
@@ -104,6 +102,7 @@ module physpkg
   character(len=16) :: shallow_scheme
   character(len=16) :: macrop_scheme
   character(len=16) :: microp_scheme 
+  real(r8)          :: zm_avg_time_sec 
   integer           :: cld_macmic_num_steps    ! Number of macro/micro substeps
   logical           :: do_clubb_sgs
   logical           :: do_shoc_sgs
@@ -188,6 +187,11 @@ subroutine phys_register
     integer  :: mm       ! constituent index 
     !-----------------------------------------------------------------------
 
+    ! GAR: ZM time averaging variables
+    real(r8) :: zm_avg_time_sec_out  ! model timestep (seconds)
+    real(r8) :: model_dtime  ! model timestep (seconds)
+    integer  :: total_nsteps ! number of timesteps to allocate for the physics buffer
+
     integer :: nmodes
     character(len=16) :: spc_name
 
@@ -206,7 +210,8 @@ subroutine phys_register
                       history_gaschmbudget_out = history_gaschmbudget, &
                    history_gaschmbudget_2D_out = history_gaschmbudget_2D, &
             history_gaschmbudget_2D_levels_out = history_gaschmbudget_2D_levels, &
-                   history_chemdyg_summary_out = history_chemdyg_summary )
+                   history_chemdyg_summary_out = history_chemdyg_summary, &
+                      zm_avg_time_sec_out      = zm_avg_time_sec )
 
     ! Initialize dyn_time_lvls
     call pbuf_init_time()
@@ -232,8 +237,18 @@ subroutine phys_register
     call pbuf_add_field('CLDICEINI', 'physpkg', dtype_r8, (/pcols,pver/), cldiceini_idx)
     call pbuf_add_field('static_ener_ac', 'global', dtype_r8, (/pcols/), static_ener_ac_idx)
     call pbuf_add_field('water_vap_ac',   'global', dtype_r8, (/pcols/), water_vap_ac_idx)
+   
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ 
+    ! GAR: set parameters used to control dCAPE/dt (known as dltaa) averaging
+    model_dtime = get_step_size() ! get model timestep (seconds)
+    zm_avg_time_sec_out = 9000.0_r8
+    total_nsteps = nint(zm_avg_time_sec_out / model_dtime) ! round quotient to nearest int
+    write(iulog, *) "[physpkg.F90, phys_register()] model_dtime: ", model_dtime, "ZM averaging time interval (seconds): ", zm_avg_time_sec_out, "number of averaging timesteps: ", total_nsteps
     ! GAR: add field to dadt
     call pbuf_add_field('DADT_AVG', 'global', dtype_r8, (/total_nsteps, pcols/), dadt_avg_idx)
+
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     ! check energy package
     call check_energy_register
@@ -2324,6 +2339,8 @@ subroutine tphysbc (ztodt,               &
     real(r8),pointer :: snow_sed(:)     ! snow from cloud ice sedimentation
     real(r8) :: sh_e_ed_ratio(pcols,pver)       ! shallow conv [ent/(ent+det)] ratio  
 
+    ! GAR: ZM time averaging variables
+    integer :: total_nsteps ! number of timesteps to average over for time-averaging
 
     ! Local copies for substepping
     real(r8) :: prec_pcw_macmic(pcols)
@@ -2661,10 +2678,11 @@ end if
     ! Since the PBL doesn't pass constituent perturbations, they
     ! are zeroed here for input to the moist convection routine
     !
+
     ! GAR: dadt modification
-    
     call pbuf_get_field(pbuf, dadt_avg_idx, dadt_avg)
-   
+    total_nsteps = size(dadt_avg, 1) ! get the number of timesteps to average over from buffer size  
+ 
     call t_startf ('convect_deep_tend')
     call convect_deep_tend(  &
          cmfmc,      cmfcme,             &
@@ -2672,13 +2690,10 @@ end if
          rliq,       rice, &
          ztodt,   &
          state,   ptend, cam_in%landfrac, pbuf, mu, eu, du, md, ed, dp,   &
-         dsubcld, jt, maxg, ideep, lengath, dadt_avg, total_nsteps, nstep_avg) 
+         dsubcld, jt, maxg, ideep, lengath, dadt_avg, total_nsteps) 
     call t_stopf('convect_deep_tend')
 
     write(iulog, *) "[physpkg.F90] Physics step count number: #", nstep
-    ! write(iulog, *) "---->[physpkg.F90] dadt_avg", dadt_avg
-
-    ! call pbuf_set_field(pbuf, dadt_avg_idx, dadt_avg)
 
     call physics_update(state, ptend, ztodt, tend)
     
