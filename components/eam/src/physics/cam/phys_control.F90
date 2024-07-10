@@ -156,7 +156,7 @@ integer, public, protected :: ieflx_opt = 0
 integer           :: cld_macmic_num_steps = 1
 
 ! GAR: ZM time averaging definition and default set
-real(r8)           :: zm_avg_time_sec = 600.0_r8
+real(r8)           :: zm_avg_time_sec = 900.0_r8
 
 logical :: prog_modal_aero ! determines whether prognostic modal aerosols are present in the run.
 
@@ -263,7 +263,6 @@ subroutine phys_ctl_readnl(nlfile)
       zm_avg_time_sec ! GAR: adding namelist entry for time averaging, if chosen
    !-----------------------------------------------------------------------------
 
-   write(iulog, *) "[phys_control.F90] zm_avg_time_sec", zm_avg_time_sec
 
    if (masterproc) then
       unitn = getunit()
@@ -546,6 +545,8 @@ subroutine phys_ctl_readnl(nlfile)
        call endrun("Setting get_presc_aero_data requires a prognostic aerosol scheme.")
      endif
    endif
+   
+   write(iulog, *) "[phys_control.F90] zm_avg_time_sec", zm_avg_time_sec
     
 end subroutine phys_ctl_readnl
 

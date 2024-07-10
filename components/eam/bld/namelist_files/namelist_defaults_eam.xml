@@ -1225,7 +1225,7 @@
 <zmconv_c0_ocn                  hgrid="ne120np4" phys="default"       > 0.0035D0 </zmconv_c0_ocn>
 
 <zmconv_tau			                                                      > 3600</zmconv_tau>
-<zmconv_dcape_avg_time                                                    > 600</zmconv_dcape_avg_time>
+<zm_avg_time_sec                                                      > 900.0</zm_avg_time_sec>
 <zmconv_alfa			                                                      > 0.1</zmconv_alfa>
 
 <zmconv_ke                                                            > 3.0E-6 </zmconv_ke>
