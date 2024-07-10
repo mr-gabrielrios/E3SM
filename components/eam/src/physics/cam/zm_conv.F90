@@ -1112,11 +1112,19 @@ subroutine zm_convr(lchnk   ,ncol    , &
    
    write(iulog, *) "[zm_conv.F90], zm_convr()]: number of averaging timesteps: ", total_nsteps
 
-   do k = 1, total_nsteps 
-      do i = 1, lengath 
-         dadt_g(k, i) = dadt_avg(k, ideep(i))
+   if (nstep .ge. total_nsteps) then
+      do k = 1, total_nsteps 
+         do i = 1, lengath 
+            dadt_g(k, i) = dadt_avg(k, ideep(i))
+         end do
       end do
-   end do
+   else
+      do k = 1, nstep 
+         do i = 1, lengath 
+            dadt_g(k, i) = dadt_avg(k, ideep(i))
+         end do
+      end do
+   end if
    
    ! GAR: call the closure routine where dadt_g will be passed in to grab
    !      the next computed value of dadt
@@ -1132,7 +1140,15 @@ subroutine zm_convr(lchnk   ,ncol    , &
    
    ! GAR: assign gathered points from dadt_g into the corresponding chunk indices for dadt
    do i = 1, lengath
-      dadt_avg(total_nsteps, ideep(i)) = dadt_g(total_nsteps, i)
+      if (nstep .ge. total_nsteps) then
+         write(iulog, *) "[zm_conv.F90, zm_convr()] dadt_avg(total_nsteps) pre-closure: ", dadt_avg(total_nsteps, ideep(i))
+         dadt_avg(total_nsteps, ideep(i)) = dadt_g(total_nsteps, i)
+         write(iulog, *) "[zm_conv.F90, zm_convr()] dadt_avg(total_nsteps) post-closure: ", dadt_avg(total_nsteps, ideep(i))
+      else
+         write(iulog, *) "[zm_conv.F90, zm_convr()] dadt_avg(nstep) pre-closure: ", dadt_avg(nstep, ideep(i))
+         dadt_avg(nstep, ideep(i)) = dadt_g(nstep, i)
+         write(iulog, *) "[zm_conv.F90, zm_convr()] dadt_avg(nstep) post-closure: ", dadt_avg(nstep, ideep(i))
+      end if
       dadt_out(ideep(i)) = dadt_out_g(i)
    end do
 
@@ -4130,7 +4146,11 @@ subroutine closure(lchnk   , &
       
       ! GAR (2024-06-27): put dltaa into the gathered array (see Yun et al. 2017 - Eq 4)
       dadt_out_g(i) = dltaa
-      dadt_g(total_nsteps, i) = dltaa
+      if (nstep .ge. total_nsteps) then
+         dadt_g(total_nsteps, i) = dltaa
+      else
+         dadt_g(nstep, i) = dltaa
+      end if
 
       ! GAR: perform the averaging
       if (nstep > total_nsteps) then

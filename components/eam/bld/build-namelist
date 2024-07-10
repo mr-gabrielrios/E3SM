@@ -4020,6 +4020,7 @@ add_default($nl, 'zmconv_c0_lnd');
 add_default($nl, 'zmconv_c0_ocn');
 add_default($nl, 'zmconv_ke');
 add_default($nl, 'zmconv_tau');
+# add_default($nl, 'zm_dcape_avg_time');
 add_default($nl, 'zm_avg_time_sec');
 add_default($nl, 'zmconv_tiedke_add');
 add_default($nl, 'zmconv_cape_cin');

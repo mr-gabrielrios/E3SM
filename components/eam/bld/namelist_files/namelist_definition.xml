@@ -3210,6 +3210,13 @@ Type of deep convection scheme employed.  'ZM' for Zhang-McFarlane;
 Default: 'ZM'
 </entry>
 
+<!--
+<entry id="zm_dcape_avg_time" type="logical" category="conv"
+       group="phys_ctl_nl" valid_values="" >
+Logical to determine if time-averaging for CAPE tendency is applied in the Zhang-MacFarlane scheme.
+</entry>
+-->
+
 <entry id="zm_avg_time_sec" type="real" category="conv"
        group="phys_ctl_nl" valid_values="" >
 Length of time-averaging for CAPE tendency in the Zhang-MacFarlane scheme.
