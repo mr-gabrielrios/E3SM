@@ -1193,7 +1193,11 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
 
    call outfld('DCAPE', dcape, pcols, lchnk)
    call outfld('DADT', dadt_out, pcols, lchnk)
-   call outfld('DADT_AVG', dadt_avg(total_nsteps, :ncol), pcols, lchnk)
+   if (nstep .ge. total_nsteps) then
+      call outfld('DADT_AVG', dadt_avg(total_nsteps, :ncol), pcols, lchnk)
+   else
+      call outfld('DADT_AVG', dadt_avg(nstep, :ncol), pcols, lchnk)
+   end if
    call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
    
    ! ----------------------------------------------------------------------------------
