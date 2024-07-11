@@ -931,12 +931,15 @@ subroutine zm_convr(lchnk   ,ncol    , &
          do i = 1, ncol
             ! If the iterand timestep (k) is less than the number of averaging timesteps,
             ! pull the next timestep (k+1) from the averaging array to the container iterand timestep (k)
+            write(iulog, *) "[zm_conv.F90] dadt_avg(k, i) pre-init:", dadt_avg(k, i)
             if (k < total_nsteps) then
                dadt_container(k, i) = dadt_avg(k+1, i)
             ! Else, populate with 0         
             else
                dadt_container(k, i) = 0._r8
             end if
+            write(iulog, *) "[zm_conv.F90] dadt_container(k, i) post-init:", dadt_container(k, i)
+            write(iulog, *) "[zm_conv.F90] dadt_avg(k, i) post-init:", dadt_avg(k, i)
          end do
       end do  
       ! Now, update the averaging array with the shifted values
@@ -1141,6 +1144,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    ! GAR: assign gathered points from dadt_g into the corresponding chunk indices for dadt
    do i = 1, lengath
       if (nstep .ge. total_nsteps) then
+<<<<<<< HEAD
          write(iulog, *) "[zm_conv.F90, zm_convr()] dadt_avg(total_nsteps) pre-closure: ", dadt_avg(total_nsteps, ideep(i))
          dadt_avg(total_nsteps, ideep(i)) = dadt_g(total_nsteps, i)
          write(iulog, *) "[zm_conv.F90, zm_convr()] dadt_avg(total_nsteps) post-closure: ", dadt_avg(total_nsteps, ideep(i))
@@ -1148,6 +1152,13 @@ subroutine zm_convr(lchnk   ,ncol    , &
          write(iulog, *) "[zm_conv.F90, zm_convr()] dadt_avg(nstep) pre-closure: ", dadt_avg(nstep, ideep(i))
          dadt_avg(nstep, ideep(i)) = dadt_g(nstep, i)
          write(iulog, *) "[zm_conv.F90, zm_convr()] dadt_avg(nstep) post-closure: ", dadt_avg(nstep, ideep(i))
+=======
+         dadt_avg(total_nsteps, ideep(i)) = dadt_g(total_nsteps, i)
+         write(iulog, *) "[zm_conv.F90, post-assignment] dadt_avg(total_nsteps)", dadt_avg(total_nsteps, ideep(i))
+      else
+         dadt_avg(nstep, ideep(i)) = dadt_g(total_nsteps, i)
+         write(iulog, *) "[zm_conv.F90, post-assignment] dadt_avg(nstep)", dadt_avg(nstep, ideep(i))
+>>>>>>> tmp
       end if
       dadt_out(ideep(i)) = dadt_out_g(i)
    end do
