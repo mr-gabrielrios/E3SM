@@ -242,7 +242,7 @@ subroutine phys_register
  
     ! GAR: set parameters used to control dCAPE/dt (known as dltaa) averaging
     model_dtime = get_step_size() ! get model timestep (seconds)
-    zm_avg_time_sec = 9000.0_r8
+    zm_avg_time_sec = 4500.0_r8
     total_nsteps = nint(zm_avg_time_sec / model_dtime) ! round quotient to nearest int
     write(iulog, *) "[physpkg.F90, phys_register()] model_dtime: ", model_dtime, "ZM averaging time interval (seconds): ", zm_avg_time_sec, "number of averaging timesteps: ", total_nsteps
     ! GAR: add field to dadt
@@ -2682,6 +2682,8 @@ end if
     ! GAR: dadt modification
     call pbuf_get_field(pbuf, dadt_avg_idx, dadt_avg)
     total_nsteps = size(dadt_avg, 1) ! get the number of timesteps to average over from buffer size  
+    write(iulog, *) "[zm_conv.F90] pre-convect_deep_tend total_nsteps", total_nsteps
+
  
     call t_startf ('convect_deep_tend')
     call convect_deep_tend(  &

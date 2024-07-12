@@ -405,7 +405,7 @@ subroutine phys_ctl_readnl(nlfile)
    call mpibcast(rrtmg_temp_fix,                  1 , mpilog,  0, mpicom)
    call mpibcast(cld_sed,                         1 , mpir8,   0, mpicom)
    call mpibcast(modal_strat_sulfate_aod_treatment, 1 , mpilog,  0, mpicom)
-   call mpibcast(zm_avg_time_sec,                 1 , mpilog,  0, mpicom) ! GAR: ZM time-averaging
+   call mpibcast(zm_avg_time_sec,                 1 , mpir8,  0, mpicom) ! GAR: ZM time-averaging
 
 #endif
 

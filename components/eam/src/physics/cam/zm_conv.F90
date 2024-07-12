@@ -4003,6 +4003,8 @@ subroutine closure(lchnk   , &
    integer k, kmin, kmax
    integer msg
 
+   real(r8) :: infty = huge(beta)
+
    real(r8) rd
    real(r8) rl
 
@@ -4141,9 +4143,24 @@ subroutine closure(lchnk   , &
       dadt_out_g(i) = dltaa
       dadt_g(total_nsteps, i) = dltaa
 
+      
+      
       ! GAR: perform the averaging
       if (nstep > total_nsteps) then
+         write(iulog, *) "[zm_conv.F90, closure()]: dadt_out_g(i)", dadt_out_g(i), total_nsteps, sum(dadt_g(1:total_nsteps, i))/total_nsteps   
          dadt_out_g(i) = sum(dadt_g(1:total_nsteps, i))/total_nsteps
+         if (dadt_out_g(i) /= dadt_out_g(i)) then
+            dadt_out_g(i) = 0._r8
+            write(iulog, *) "[zm_conv.F90, closure() nan check fired!"   
+         else if (dadt_out_g(i) > infty) then
+            dadt_out_g(i) = 0._r8
+            write(iulog, *) "[zm_conv.F90, closure() infinity check fired!"   
+         else if (dadt_out_g(i) < -infty) then
+            dadt_out_g(i) = 0._r8
+            write(iulog, *) "[zm_conv.F90, closure() negative infinity check fired!"   
+         else
+            write(iulog, *) "[zm_conv.F90, closure()] is good to go"
+         end if
          dltaa = dadt_out_g(i)
        endif
       
