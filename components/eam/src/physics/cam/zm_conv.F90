@@ -939,39 +939,38 @@ subroutine zm_convr(lchnk   ,ncol    , &
    ! In other words, in an array with n averaging timesteps, the values in timesteps 2:n
    ! will be shifted to a new container at timesteps 1:n-1, then popped back into the original array
    ! at timesteps 1:n-1
-   ! if (nstep .ge. total_nsteps) then
-   !    do k = 1, total_nsteps
-   !       do i = 1, ncol
-   !          ! If the iterand timestep (k) is less than the number of averaging timesteps,
-   !          ! pull the next timestep (k+1) from the averaging array to the container iterand timestep (k)
-   !          write(iulog, *) "[zm_conv.F90] dadt_avg(k, i) pre-init:", dadt_avg(k, i)
-   !          if (k < total_nsteps) then
-   !             dadt_container(k, i) = dadt_avg(k+1, i)
-   !          ! Else, populate with 0         
-   !          else
-   !             dadt_container(k, i) = 0._r8
-   !          end if
-   !          write(iulog, *) "[zm_conv.F90] dadt_container(k, i) post-init:", dadt_container(k, i)
-   !          write(iulog, *) "[zm_conv.F90] dadt_avg(k, i) post-init:", dadt_avg(k, i)
-   !       end do
-   !    end do  
-   !    ! Now, update the averaging array with the shifted values
-   !    do k = 1, total_nsteps
-   !       do i = 1, ncol
-   !          dadt_avg(k, i) = dadt_container(k, i)
-   !       end do
-   !    end do
-   ! else
-   !    do k = nstep, total_nsteps
-   !       do i = 1, ncol
-   !          dadt_avg(k, i) = 0._r8
-   !       end do
-   !    end do
-   ! end if
+   if (nstep .ge. total_nsteps) then
+      do k = 1, total_nsteps
+         do i = 1, ncol
+            ! If the iterand timestep (k) is less than the number of averaging timesteps,
+            ! pull the next timestep (k+1) from the averaging array to the container iterand timestep (k)
+            write(iulog, *) "[zm_conv.F90] dadt_avg(k, i) pre-init:", dadt_avg(k, i)
+            if (k < total_nsteps) then
+               dadt_container(k, i) = dadt_avg(k+1, i)
+            ! Else, populate with 0         
+            else
+               dadt_container(k, i) = 0._r8
+            end if
+            write(iulog, *) "[zm_conv.F90] dadt_container(k, i) post-init:", dadt_container(k, i)
+            write(iulog, *) "[zm_conv.F90] dadt_avg(k, i) post-init:", dadt_avg(k, i)
+         end do
+      end do  
+      ! Now, update the averaging array with the shifted values
+      do k = 1, total_nsteps
+         do i = 1, ncol
+            dadt_avg(k, i) = dadt_container(k, i)
+         end do
+      end do
+   else
+      do k = nstep, total_nsteps
+         do i = 1, ncol
+            dadt_avg(k, i) = 0._r8
+         end do
+      end do
+   end if
 
    ! GAR: populate the arrays before the first return if no gathered points are found 
    do i = 1, ncol 
-      dadt_avg(k, i) = 0._r8
       dadt_out(i) = 0._r8
    end do
 
