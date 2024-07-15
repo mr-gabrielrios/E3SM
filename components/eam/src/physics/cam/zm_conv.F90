@@ -851,7 +851,6 @@ subroutine zm_convr(lchnk   ,ncol    , &
       if (trigdcape_ull .or. trig_dcape_only) then
          dcapemx(:ncol) = maxi(:ncol)
       endif
-
       !DCAPE-ULL
       if (.not. is_first_step() .and. (trigdcape_ull .or. trig_dcape_only)) then
          iclosure = .false.
@@ -922,40 +921,57 @@ subroutine zm_convr(lchnk   ,ncol    , &
      end if
    end do
 
+   ! GAR: prepopulate the dadt_avg arrays to avoid null outputs
+   if (nstep .eq. 0) then
+      do k = 1, total_nsteps
+         do i = 1, ncol
+            dadt_avg(k, i) = 0._r8
+         end do
+      end do
+   end if
+   do k = 1, total_nsteps
+      do i = 1, ncol
+         dadt_container(k, i) = 0._r8
+      end do
+   end do
+
    ! GAR: Update the averaging array using the "shifting method"
    ! In other words, in an array with n averaging timesteps, the values in timesteps 2:n
    ! will be shifted to a new container at timesteps 1:n-1, then popped back into the original array
    ! at timesteps 1:n-1
-   if (nstep .ge. total_nsteps) then
-      do k = 1, total_nsteps
-         do i = 1, ncol
-            ! If the iterand timestep (k) is less than the number of averaging timesteps,
-            ! pull the next timestep (k+1) from the averaging array to the container iterand timestep (k)
-            write(iulog, *) "[zm_conv.F90] dadt_avg(k, i) pre-init:", dadt_avg(k, i)
-            if (k < total_nsteps) then
-               dadt_container(k, i) = dadt_avg(k+1, i)
-            ! Else, populate with 0         
-            else
-               dadt_container(k, i) = 0._r8
-            end if
-            write(iulog, *) "[zm_conv.F90] dadt_container(k, i) post-init:", dadt_container(k, i)
-            write(iulog, *) "[zm_conv.F90] dadt_avg(k, i) post-init:", dadt_avg(k, i)
-         end do
-      end do  
-      ! Now, update the averaging array with the shifted values
-      do k = 1, total_nsteps
-         do i = 1, ncol
-            dadt_avg(k, i) = dadt_container(k, i)
-         end do
-      end do
-   else
-      do i = 1, ncol
-         dadt_avg(nstep, i) = 0._r8
-      end do
-   end if
+   ! if (nstep .ge. total_nsteps) then
+   !    do k = 1, total_nsteps
+   !       do i = 1, ncol
+   !          ! If the iterand timestep (k) is less than the number of averaging timesteps,
+   !          ! pull the next timestep (k+1) from the averaging array to the container iterand timestep (k)
+   !          write(iulog, *) "[zm_conv.F90] dadt_avg(k, i) pre-init:", dadt_avg(k, i)
+   !          if (k < total_nsteps) then
+   !             dadt_container(k, i) = dadt_avg(k+1, i)
+   !          ! Else, populate with 0         
+   !          else
+   !             dadt_container(k, i) = 0._r8
+   !          end if
+   !          write(iulog, *) "[zm_conv.F90] dadt_container(k, i) post-init:", dadt_container(k, i)
+   !          write(iulog, *) "[zm_conv.F90] dadt_avg(k, i) post-init:", dadt_avg(k, i)
+   !       end do
+   !    end do  
+   !    ! Now, update the averaging array with the shifted values
+   !    do k = 1, total_nsteps
+   !       do i = 1, ncol
+   !          dadt_avg(k, i) = dadt_container(k, i)
+   !       end do
+   !    end do
+   ! else
+   !    do k = nstep, total_nsteps
+   !       do i = 1, ncol
+   !          dadt_avg(k, i) = 0._r8
+   !       end do
+   !    end do
+   ! end if
 
    ! GAR: populate the arrays before the first return if no gathered points are found 
    do i = 1, ncol 
+      dadt_avg(k, i) = 0._r8
       dadt_out(i) = 0._r8
    end do
 
@@ -965,7 +981,6 @@ subroutine zm_convr(lchnk   ,ncol    , &
       ideep(ii)=i
    end do
 !
-! obtain gathered arrays necessary for ensuing calculations.
 !
    do k = 1,pver
       do i = 1,lengath
@@ -4142,27 +4157,25 @@ subroutine closure(lchnk   , &
       ! GAR (2024-06-27): put dltaa into the gathered array (see Yun et al. 2017 - Eq 4)
       dadt_out_g(i) = dltaa
       dadt_g(total_nsteps, i) = dltaa
-
-      
       
       ! GAR: perform the averaging
       if (nstep > total_nsteps) then
-         write(iulog, *) "[zm_conv.F90, closure()]: dadt_out_g(i)", dadt_out_g(i), total_nsteps, sum(dadt_g(1:total_nsteps, i))/total_nsteps   
-         dadt_out_g(i) = sum(dadt_g(1:total_nsteps, i))/total_nsteps
-         if (dadt_out_g(i) /= dadt_out_g(i)) then
-            dadt_out_g(i) = 0._r8
-            write(iulog, *) "[zm_conv.F90, closure() nan check fired!"   
-         else if (dadt_out_g(i) > infty) then
-            dadt_out_g(i) = 0._r8
-            write(iulog, *) "[zm_conv.F90, closure() infinity check fired!"   
-         else if (dadt_out_g(i) < -infty) then
-            dadt_out_g(i) = 0._r8
-            write(iulog, *) "[zm_conv.F90, closure() negative infinity check fired!"   
-         else
-            write(iulog, *) "[zm_conv.F90, closure()] is good to go"
-         end if
-         dltaa = dadt_out_g(i)
-       endif
+        write(iulog, *) "[zm_conv.F90, closure()]: dadt_out_g(i)", dadt_out_g(i), total_nsteps, sum(dadt_g(1:total_nsteps, i))/total_nsteps   
+        dadt_out_g(i) = sum(dadt_g(1:total_nsteps, i))/total_nsteps
+        if (dadt_out_g(i) /= dadt_out_g(i)) then
+           dadt_out_g(i) = 0._r8
+           write(iulog, *) "[zm_conv.F90, closure() nan check fired!"   
+        else if (dadt_out_g(i) > infty) then
+           dadt_out_g(i) = 0._r8
+           write(iulog, *) "[zm_conv.F90, closure() infinity check fired!"   
+        else if (dadt_out_g(i) < -infty) then
+           dadt_out_g(i) = 0._r8
+           write(iulog, *) "[zm_conv.F90, closure() negative infinity check fired!"   
+        else
+           write(iulog, *) "[zm_conv.F90, closure()] is good to go"
+        end if
+        dltaa = dadt_out_g(i)
+      endif
       
       ! this is highlighed because it's an output quantity
       if (dadt(i) /= 0._r8) mb(i) = max(dltaa/tau/dadt(i),0._r8)
