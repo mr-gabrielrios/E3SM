@@ -102,6 +102,7 @@ module physpkg
   character(len=16) :: shallow_scheme
   character(len=16) :: macrop_scheme
   character(len=16) :: microp_scheme 
+  logical           :: use_zm_avg_time 
   real(r8)          :: zm_avg_time_sec 
   integer           :: cld_macmic_num_steps    ! Number of macro/micro substeps
   logical           :: do_clubb_sgs
@@ -211,6 +212,7 @@ subroutine phys_register
                    history_gaschmbudget_2D_out = history_gaschmbudget_2D, &
             history_gaschmbudget_2D_levels_out = history_gaschmbudget_2D_levels, &
                    history_chemdyg_summary_out = history_chemdyg_summary, &
+                      use_zm_avg_time_out      = use_zm_avg_time, &
                       zm_avg_time_sec_out      = zm_avg_time_sec )
 
     ! Initialize dyn_time_lvls
@@ -243,7 +245,11 @@ subroutine phys_register
     ! GAR: set parameters used to control dCAPE/dt (known as dltaa) averaging
     model_dtime = get_step_size() ! get model timestep (seconds)
     ! zm_avg_time_sec = 4500.0_r8
-    total_nsteps = nint(zm_avg_time_sec / model_dtime) ! round quotient to nearest int
+    if (use_zm_avg_time) then
+       total_nsteps = nint(zm_avg_time_sec / model_dtime) ! round quotient to nearest int
+    else
+       total_nsteps = 1
+    end if
     write(iulog, *) "[physpkg.F90, phys_register()] model_dtime: ", model_dtime, "ZM averaging time interval (seconds): ", zm_avg_time_sec, "number of averaging timesteps: ", total_nsteps
     ! GAR: add field to dadt
     call pbuf_add_field('DADT_AVG', 'global', dtype_r8, (/total_nsteps, pcols/), dadt_avg_idx)

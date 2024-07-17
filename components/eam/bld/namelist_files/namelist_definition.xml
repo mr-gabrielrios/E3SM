@@ -3215,6 +3215,11 @@ Default: 'ZM'
 Length of time-averaging for CAPE tendency in the Zhang-MacFarlane scheme.
 </entry>
 
+<entry id="use_zm_avg_time" type="logical" category="conv"
+       group="phys_ctl_nl" valid_values="" >
+Boolean for time-averaging for CAPE tendency in the Zhang-MacFarlane scheme.
+</entry>
+
 <entry id="microp_scheme" type="char*16" category="conv"
        group="phys_ctl_nl" valid_values="RK,MG,P3,off" >
 Type of microphysics scheme employed.  'RK' for Rasch and Kristjansson

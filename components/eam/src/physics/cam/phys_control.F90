@@ -157,6 +157,7 @@ integer           :: cld_macmic_num_steps = 1
 
 ! GAR: ZM time averaging definition and default set
 real(r8)           :: zm_avg_time_sec = 900.0_r8
+logical            :: use_zm_avg_time = .false.
 
 logical :: prog_modal_aero ! determines whether prognostic modal aerosols are present in the run.
 
@@ -260,7 +261,7 @@ subroutine phys_ctl_readnl(nlfile)
       l_bc_energy_fix, l_dry_adj, l_st_mac, l_st_mic, l_rad, prc_coef1,prc_exp,prc_exp1,cld_sed,mg_prc_coeff_fix, &
       rrtmg_temp_fix, ideal_phys_option, &
       modal_strat_sulfate_aod_treatment, &
-      zm_avg_time_sec ! GAR: adding namelist entry for time averaging, if chosen
+      zm_avg_time_sec, use_zm_avg_time ! GAR: adding namelist entry for time averaging, if chosen
    !-----------------------------------------------------------------------------
 
 
@@ -371,6 +372,7 @@ subroutine phys_ctl_readnl(nlfile)
    call mpibcast(use_gw_oro,                      1 , mpilog,  0, mpicom)
    call mpibcast(use_gw_front,                    1 , mpilog,  0, mpicom)
    call mpibcast(use_gw_convect,                  1 , mpilog,  0, mpicom)
+   call mpibcast(use_zm_avg_time,                 1 , mpilog,  0, mpicom)
    call mpibcast(use_gw_energy_fix,              1 , mpilog,  0, mpicom)
    call mpibcast(fix_g1_err_ndrop,                1 , mpilog,  0, mpicom)
    call mpibcast(ssalt_tuning,                    1 , mpilog,  0, mpicom)
@@ -545,9 +547,11 @@ subroutine phys_ctl_readnl(nlfile)
        call endrun("Setting get_presc_aero_data requires a prognostic aerosol scheme.")
      endif
    endif
-   
-   write(iulog, *) "[phys_control.F90] zm_avg_time_sec", zm_avg_time_sec
-    
+
+   if (use_zm_avg_time) then   
+      write(iulog, *) "[phys_control.F90] zm_avg_time_sec", zm_avg_time_sec
+   end if    
+
 end subroutine phys_ctl_readnl
 
 !===============================================================================
@@ -620,7 +624,7 @@ subroutine phys_getopts(deep_scheme_out, shallow_scheme_out, eddy_scheme_out, &
                        ,l_bc_energy_fix_out, l_dry_adj_out, l_st_mac_out, l_st_mic_out, l_rad_out  &
                        ,prc_coef1_out,prc_exp_out,prc_exp1_out, cld_sed_out,mg_prc_coeff_fix_out,rrtmg_temp_fix_out &
                        ,modal_strat_sulfate_aod_treatment_out, &
-                        zm_avg_time_sec_out)
+                        zm_avg_time_sec_out, use_zm_avg_time_out)
 
 !-----------------------------------------------------------------------
 ! Purpose: Return runtime settings
@@ -640,6 +644,7 @@ subroutine phys_getopts(deep_scheme_out, shallow_scheme_out, eddy_scheme_out, &
    character(len=128), intent(out), optional :: ideal_phys_option_out 
    character(len=16), intent(out), optional :: MMF_microphysics_scheme_out
    real(r8),          intent(out), optional :: zm_avg_time_sec_out
+   logical,           intent(out), optional :: use_zm_avg_time_out
    real(r8),          intent(out), optional :: MMF_orientation_angle_out
    logical,           intent(out), optional :: use_MMF_out
    logical,           intent(out), optional :: use_ECPP_out
@@ -736,6 +741,7 @@ subroutine phys_getopts(deep_scheme_out, shallow_scheme_out, eddy_scheme_out, &
    real(r8),          intent(out), optional :: cld_sed_out
 
    if ( present(deep_scheme_out         ) ) deep_scheme_out          = deep_scheme
+   if ( present(use_zm_avg_time_out ) )   use_zm_avg_time_out      = use_zm_avg_time
    if ( present(zm_avg_time_sec_out  ) )    zm_avg_time_sec_out      = zm_avg_time_sec
    if ( present(shallow_scheme_out      ) ) shallow_scheme_out       = shallow_scheme
    if ( present(eddy_scheme_out         ) ) eddy_scheme_out          = eddy_scheme
