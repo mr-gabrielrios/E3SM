@@ -327,7 +327,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
                     mu      ,md      ,du      ,eu      ,ed      , &
                     dp      ,dsubcld ,jt      ,maxg    ,ideep   , &
                     lengath ,ql      ,rliq    ,landfrac, &
-                    t_star  ,q_star, dcape,   &
+                    t_star  ,q_star  ,dcape   ,dadt, &
                     aero    ,qi      ,dif     ,dnlf    ,dnif    , & 
                     dsf     ,dnsf    ,sprd    ,rice    ,frz     , &
                     mudpcu  ,lambdadpcu, microp_st, wuc, &
@@ -517,6 +517,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8), intent(out) :: prec(pcols)
    real(r8), intent(out) :: rliq(pcols)   ! reserved liquid (not yet in cldliq) for energy integrals
    real(r8), intent(out) :: dcape(pcols)           ! output dynamical CAPE
+   real(r8), intent(out) :: dadt(pcols)            ! output dynamical CAPE, ZM-derived pre-conditioned value
    real(r8), intent(out) :: z(pcols,pver)              ! w  grid slice of ambient mid-layer height in metres.
 
 
@@ -1039,7 +1040,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 qlg     ,dsubcld ,mb      ,capeg   ,tlg     , &
                 lclg    ,lelg    ,jt      ,maxg    ,1       , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
-                msg     ,capelmt_wk )
+                msg     ,capelmt_wk, dadt )
 !
 ! limit cloud base mass flux to theoretical upper bound.
 !
@@ -3813,7 +3814,7 @@ subroutine closure(lchnk   , &
                    ql      ,dsubcld ,mb      ,cape    ,tl      , &
                    lcl     ,lel     ,jt      ,mx      ,il1g    , &
                    il2g    ,rd      ,grav    ,cp      ,rl      , &
-                   msg     ,capelmt )
+                   msg     ,capelmt, dadt )
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -3872,6 +3873,7 @@ subroutine closure(lchnk   , &
    integer, intent(in) :: lel(pcols)        ! index of launch leve
    integer, intent(in) :: jt(pcols)         ! top of updraft
    integer, intent(in) :: mx(pcols)         ! base of updraft
+   real(r8), intent(out) :: dadt(pcols) 
 !
 !--------------------------Local variables------------------------------
 !
@@ -3887,7 +3889,6 @@ subroutine closure(lchnk   , &
    real(r8) beta
    real(r8) capelmt
    real(r8) cp
-   real(r8) dadt(pcols)
    real(r8) debdt
    real(r8) dltaa
    real(r8) eb

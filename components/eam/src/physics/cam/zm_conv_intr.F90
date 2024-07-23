@@ -238,6 +238,7 @@ subroutine zm_conv_init(pref_edge)
 
     call addfld ('CAPE_ZM',horiz_only, 'A',   'J/kg', 'Convectively available potential energy')
     call addfld ('DCAPE',  horiz_only, 'A',   'J/kg', 'change rate of Convectively available potential energy')
+    call addfld ('DADT',  horiz_only, 'A',   'J/kg',  'ZM-specific change in pre-conditioned CAPE')
     call addfld ('FREQZM',horiz_only  ,'A','fraction', 'Fractional occurance of ZM convection') 
 
     call addfld ('ZMMTT',     (/ 'lev' /), 'A', 'K/s', 'T tendency - ZM convective momentum transport')
@@ -743,6 +744,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8), pointer, dimension(:,:) :: t_star ! intermediate T between n and n-1 time step
    real(r8), pointer, dimension(:,:) :: q_star ! intermediate q between n and n-1 time step
    real(r8) :: dcape(pcols)                    ! dynamical cape
+   real(r8) :: dadt(pcols)                     ! ZM-derived raw value of dynamical cape tendency
    real(r8) :: maxgsav(pcols)                  ! tmp array for recording and outfld to MAXI
 
    real(r8), pointer :: dlf(:,:)    ! detrained convective cloud water mixing ratio.
@@ -1032,7 +1034,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
                     mu,md,du,eu,ed      , &
                     dp ,dsubcld ,jt,maxg,ideep   , &
                     lengath ,ql      ,rliq  ,landfrac,  &
-                    t_star, q_star, dcape, &  
+                    t_star, q_star, dcape, dadt, &  
                     aero(lchnk), qi, dif, dnlf, dnif, dsf, dnsf, sprd, rice, frz, mudpcu, &
                     lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed)
 
@@ -1181,6 +1183,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    end if
 
    call outfld('DCAPE', dcape, pcols, lchnk)
+   call outfld('DADT', dadt, pcols, lchnk)
    call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
 !
 ! Output fractional occurance of ZM convection
