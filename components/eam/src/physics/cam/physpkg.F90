@@ -69,6 +69,7 @@ module physpkg
   integer ::  cldiceini_idx      = 0 
   integer ::  static_ener_ac_idx = 0
   integer ::  water_vap_ac_idx   = 0
+  integer ::  ZM_dadt_hist_idx       = 0
 
   integer ::  prec_str_idx       = 0
   integer ::  snow_str_idx       = 0
@@ -183,6 +184,7 @@ subroutine phys_register
     integer  :: mm       ! constituent index 
     !-----------------------------------------------------------------------
 
+    integer :: histsteps = 5 ! GAR: temporary allocation definition
     integer :: nmodes
     character(len=16) :: spc_name
 
@@ -227,7 +229,7 @@ subroutine phys_register
     call pbuf_add_field('CLDICEINI', 'physpkg', dtype_r8, (/pcols,pver/), cldiceini_idx)
     call pbuf_add_field('static_ener_ac', 'global', dtype_r8, (/pcols/), static_ener_ac_idx)
     call pbuf_add_field('water_vap_ac',   'global', dtype_r8, (/pcols/), water_vap_ac_idx)
-
+    call pbuf_add_field('DADT_AVG', 'physpkg', dtype_r8, (/pcols, histsteps/), ZM_dadt_hist_idx )
 
     ! check energy package
     call check_energy_register
@@ -2296,6 +2298,7 @@ subroutine tphysbc (ztodt,               &
     real(r8), pointer, dimension(:,:) :: cldliqini
     real(r8), pointer, dimension(:,:) :: cldiceini
     real(r8), pointer, dimension(:,:) :: dtcore
+    real(r8), pointer, dimension(:,:) :: ZM_dadt_hist
 
     real(r8), pointer, dimension(:,:,:) :: fracis  ! fraction of transported species that are insoluble
 
@@ -2644,6 +2647,10 @@ end if
     !===================================================
     ! Moist convection
     !===================================================
+    
+    ! GAR: define dadt pointer to hold data across timesteps
+    call pbuf_get_field(pbuf, ZM_dadt_hist_idx, ZM_dadt_hist)
+
     call t_startf('moist_convection')
     !
     ! Since the PBL doesn't pass constituent perturbations, they
@@ -2656,7 +2663,7 @@ end if
          rliq,       rice, &
          ztodt,   &
          state,   ptend, cam_in%landfrac, pbuf, mu, eu, du, md, ed, dp,   &
-         dsubcld, jt, maxg, ideep, lengath) 
+         dsubcld, jt, maxg, ideep, lengath, ZM_dadt_hist) 
     call t_stopf('convect_deep_tend')
 
     call physics_update(state, ptend, ztodt, tend)

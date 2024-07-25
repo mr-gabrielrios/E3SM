@@ -327,11 +327,11 @@ subroutine zm_convr(lchnk   ,ncol    , &
                     mu      ,md      ,du      ,eu      ,ed      , &
                     dp      ,dsubcld ,jt      ,maxg    ,ideep   , &
                     lengath ,ql      ,rliq    ,landfrac, &
-                    t_star  ,q_star  ,dcape   ,dadt, &
+                    t_star  ,q_star  ,dcape   , &
                     aero    ,qi      ,dif     ,dnlf    ,dnif    , & 
                     dsf     ,dnsf    ,sprd    ,rice    ,frz     , &
                     mudpcu  ,lambdadpcu, microp_st, wuc, &
-                    msetrans, hmn, z, hu, hd)
+                    msetrans, hmn, z, hu, hd, ZM_dadt_hist, ZM_dadt_avg)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -351,7 +351,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
 ! 
 !-----------------------------------------------------------------------
    use phys_control, only: cam_physpkg_is
-   use time_manager, only: is_first_step 
+   use time_manager, only: get_nstep, is_first_step 
 !
 ! ************************ index of variables **********************
 !
@@ -517,7 +517,6 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8), intent(out) :: prec(pcols)
    real(r8), intent(out) :: rliq(pcols)   ! reserved liquid (not yet in cldliq) for energy integrals
    real(r8), intent(out) :: dcape(pcols)           ! output dynamical CAPE
-   real(r8), intent(out) :: dadt(pcols)            ! output dynamical CAPE, ZM-derived pre-conditioned value
    real(r8), intent(out) :: z(pcols,pver)              ! w  grid slice of ambient mid-layer height in metres.
 
 
@@ -537,7 +536,12 @@ subroutine zm_convr(lchnk   ,ncol    , &
    integer pblt(pcols)           ! i row of pbl top indices.
    integer pbltg(pcols)          ! i row of pbl top indices.
 
-
+   ! GAR: ZM time averaging variable definitions
+   real(r8), pointer, intent(inout), dimension(:,:) :: ZM_dadt_hist
+   real(r8), intent(inout) :: ZM_dadt_avg(pcols)
+   real(r8) :: dadt(pcols)
+   integer nstep
+   integer histsteps
 
 !
 !-----------------------------------------------------------------------
@@ -665,6 +669,11 @@ subroutine zm_convr(lchnk   ,ncol    , &
 
    integer dcapemx(pcols)  ! launching level index saved from 1st call for CAPE calculation;  used in 2nd call when DCAPE-ULL active
 
+   ! GAR: get current timestep
+   nstep = get_nstep()
+   ! GAR: get size of history array time axis
+   histsteps = size(ZM_dadt_hist, dim=2)
+   write(iulog, *) "[zm_conv.F90] size of time axis in ZM_dadt_hist:", histsteps
 !
 !--------------------------Data statements------------------------------
 !
@@ -882,6 +891,14 @@ subroutine zm_convr(lchnk   ,ncol    , &
      end if
    end do
 
+   ! GAR: populate the history array with initial values
+   ! do i = 1, ncol
+   !    do k = 1, histsteps
+   !       ZM_dadt_hist(i, k) = 0.0_r8
+   !    end do
+   ! end do
+   
+
    if (lengath.eq.0) return
    do ii=1,lengath
       i=index(ii)
@@ -1041,6 +1058,12 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 lclg    ,lelg    ,jt      ,maxg    ,1       , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
                 msg     ,capelmt_wk, dadt )
+
+   ! GAR: populate the arrays with the iterand timestep da/dt values
+   ! ZM_dadt_hist(:, nstep) = dadt(:)
+   ! ZM_dadt_avg(:) = dadt(:)
+
+   
 !
 ! limit cloud base mass flux to theoretical upper bound.
 !
@@ -3814,7 +3837,7 @@ subroutine closure(lchnk   , &
                    ql      ,dsubcld ,mb      ,cape    ,tl      , &
                    lcl     ,lel     ,jt      ,mx      ,il1g    , &
                    il2g    ,rd      ,grav    ,cp      ,rl      , &
-                   msg     ,capelmt, dadt )
+                   msg     ,capelmt ,dadt )
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -3873,7 +3896,7 @@ subroutine closure(lchnk   , &
    integer, intent(in) :: lel(pcols)        ! index of launch leve
    integer, intent(in) :: jt(pcols)         ! top of updraft
    integer, intent(in) :: mx(pcols)         ! base of updraft
-   real(r8), intent(out) :: dadt(pcols) 
+   real(r8), intent(out) :: dadt(pcols)
 !
 !--------------------------Local variables------------------------------
 !

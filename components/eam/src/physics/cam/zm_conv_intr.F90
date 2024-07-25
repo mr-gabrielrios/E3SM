@@ -211,6 +211,8 @@ subroutine zm_conv_init(pref_edge)
     call addfld ('MSE',(/ 'lev' /), 'A','J/kg','dycore-derived MSE')
     call addfld ('ZM_T',(/ 'lev' /), 'A','K','ZM temperature')
     call addfld ('ZM_Q',(/ 'lev' /), 'A','kg/kg','ZM specific humidity')
+    call addfld ('ZM_DADT', horiz_only, 'A','J/kg/s','ZM CAPE tendency pre-conditioned, no averaging')
+    call addfld ('ZM_DADT_AVG', horiz_only, 'A','J/kg/s','ZM CAPE tendency pre-conditioned, averaged')
 
     call addfld ('PRECZ',horiz_only,    'A','m/s','total precipitation from ZM convection')
     call addfld ('ZMDT',(/ 'lev' /), 'A','K/s','T tendency - Zhang-McFarlane moist convection')
@@ -639,7 +641,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
      ztodt   , &
      jctop   ,jcbot , &
      state   ,ptend_all   ,landfrac,  pbuf, mu, eu, &
-     du, md, ed, dp, dsubcld, jt, maxg, ideep, lengath) 
+     du, md, ed, dp, dsubcld, jt, maxg, ideep, lengath, ZM_dadt_hist) 
 
    use cam_history,   only: outfld
    use physics_types, only: physics_state, physics_ptend
@@ -703,7 +705,13 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    
    ! w holds position of gathered points vs longitude index   
    integer, intent(out)  :: lengath
+
+   ! w holds time history of CAPE tendency from ZM
+   real(r8), pointer, dimension(:,:), intent(inout) :: ZM_dadt_hist
+
    ! Local variables
+
+   real(r8) :: ZM_dadt_avg(pcols) 
 
     type(zm_microp_st)        :: microp_st 
 
@@ -744,7 +752,6 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8), pointer, dimension(:,:) :: t_star ! intermediate T between n and n-1 time step
    real(r8), pointer, dimension(:,:) :: q_star ! intermediate q between n and n-1 time step
    real(r8) :: dcape(pcols)                    ! dynamical cape
-   real(r8) :: dadt(pcols)                     ! ZM-derived raw value of dynamical cape tendency
    real(r8) :: maxgsav(pcols)                  ! tmp array for recording and outfld to MAXI
 
    real(r8), pointer :: dlf(:,:)    ! detrained convective cloud water mixing ratio.
@@ -1034,9 +1041,9 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
                     mu,md,du,eu,ed      , &
                     dp ,dsubcld ,jt,maxg,ideep   , &
                     lengath ,ql      ,rliq  ,landfrac,  &
-                    t_star, q_star, dcape, dadt, &  
+                    t_star, q_star, dcape, &  
                     aero(lchnk), qi, dif, dnlf, dnif, dsf, dnsf, sprd, rice, frz, mudpcu, &
-                    lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed)
+                    lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed, ZM_dadt_hist, ZM_dadt_avg)
 
    if (zm_microp) then
      dlftot(:ncol,:pver) = dlf(:ncol,:pver) + dif(:ncol,:pver) + dsf(:ncol,:pver)
@@ -1183,8 +1190,9 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    end if
 
    call outfld('DCAPE', dcape, pcols, lchnk)
-   call outfld('DADT', dadt, pcols, lchnk)
    call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
+   call outfld('ZM_DADT', ZM_dadt_hist(:, nstep), pcols, lchnk)
+   call outfld('ZM_DADT_AVG', ZM_dadt_avg, pcols, lchnk)
 !
 ! Output fractional occurance of ZM convection
 !
