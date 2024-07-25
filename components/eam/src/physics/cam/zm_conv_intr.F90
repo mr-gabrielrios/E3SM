@@ -714,6 +714,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    ! Local variables
 
    real(r8) :: ZM_dadt_avg(pcols) 
+   integer :: histsteps
 
     type(zm_microp_st)        :: microp_st 
 
@@ -935,6 +936,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    lchnk = state%lchnk
    ncol  = state%ncol
    nstep = get_nstep()
+   histsteps = size(ZM_dadt_hist, dim=2)
 
    ftem = 0._r8   
    mu_out(:,:) = 0._r8
@@ -1191,15 +1193,16 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
 
    end if
 
-   ! GAR: populate a local array with pulls from the pointer
-   do i = 1, ncol
-      ZM_dadt_hist_out(i) = 0.0_r8 
-   end do
-
    call outfld('DCAPE', dcape, pcols, lchnk)
    call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
-   call outfld('ZM_DADT', ZM_dadt_hist_out, pcols, lchnk)
+   ! GAR: add outputs for ZM time averaging diagnostics.
    call outfld('ZM_DADT_AVG', ZM_dadt_avg, pcols, lchnk)
+   ! GAR: slice at the most recent timestep
+   if (nstep .ge. histsteps) then
+      call outfld('ZM_DADT', ZM_dadt_hist(:ncol, histsteps), pcols, lchnk)
+   else
+      call outfld('ZM_DADT', ZM_dadt_hist(:ncol, nstep), pcols, lchnk)
+   end if
 !
 ! Output fractional occurance of ZM convection
 !
