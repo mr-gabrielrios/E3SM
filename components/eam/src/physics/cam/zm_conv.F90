@@ -891,12 +891,13 @@ subroutine zm_convr(lchnk   ,ncol    , &
      end if
    end do
 
-   ! GAR: populate the history array with initial values
-   ! do i = 1, ncol
-   !    do k = 1, histsteps
-   !       ZM_dadt_hist(i, k) = 0.0_r8
-   !    end do
-   ! end do
+   ! GAR: populate the averaging and history arrays with initial values
+   do i = 1, ncol
+      do k = 1, histsteps
+         ZM_dadt_hist(i, k) = 0.0_r8
+      end do
+      ZM_dadt_avg(i) = 0.0_r8
+   end do
    
 
    if (lengath.eq.0) return
@@ -1060,9 +1061,16 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 msg     ,capelmt_wk, dadt )
 
    ! GAR: populate the arrays with the iterand timestep da/dt values
-   ! ZM_dadt_hist(:, nstep) = dadt(:)
-   ! ZM_dadt_avg(:) = dadt(:)
-
+   do i = 1, ncol-1
+      if (nstep .ge. histsteps) then
+         ZM_dadt_hist(i, histsteps) = dadt(i)
+      else
+         ZM_dadt_hist(i, nstep) = dadt(i)
+      end if
+      ZM_dadt_avg(i) = dadt(i)
+   end do
+   
+   write(iulog, *) "[zm_conv.F90] model timestep: ", nstep
    
 !
 ! limit cloud base mass flux to theoretical upper bound.

@@ -708,6 +708,8 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
 
    ! w holds time history of CAPE tendency from ZM
    real(r8), pointer, dimension(:,:), intent(inout) :: ZM_dadt_hist
+   ! Initialize a local placeholder for this pointer to use for print outs
+   real(r8) :: ZM_dadt_hist_out(pcols)
 
    ! Local variables
 
@@ -1189,9 +1191,14 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
 
    end if
 
+   ! GAR: populate a local array with pulls from the pointer
+   do i = 1, ncol
+      ZM_dadt_hist_out(i) = 0.0_r8 
+   end do
+
    call outfld('DCAPE', dcape, pcols, lchnk)
    call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
-   call outfld('ZM_DADT', ZM_dadt_hist(:, nstep), pcols, lchnk)
+   call outfld('ZM_DADT', ZM_dadt_hist_out, pcols, lchnk)
    call outfld('ZM_DADT_AVG', ZM_dadt_avg, pcols, lchnk)
 !
 ! Output fractional occurance of ZM convection
