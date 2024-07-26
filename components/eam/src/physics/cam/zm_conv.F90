@@ -537,9 +537,9 @@ subroutine zm_convr(lchnk   ,ncol    , &
    integer pbltg(pcols)          ! i row of pbl top indices.
 
    ! GAR: ZM time averaging variable definitions
-   real(r8), pointer, intent(inout), dimension(:,:) :: ZM_dadt_hist
-   real(r8), intent(inout) :: ZM_dadt_avg(pcols)
    integer, intent(in) :: histsteps
+   real(r8), intent(inout) :: ZM_dadt_hist(pcols, histsteps)
+   real(r8), intent(inout) :: ZM_dadt_avg(pcols)
    ! gathered arrays
    real(r8) :: ZM_dadt_hist_g(pcols, histsteps)
    real(r8) :: ZM_dadt_avg_g(pcols)
@@ -894,6 +894,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    end do
 
    write(iulog, *) "[zm_conv.F90] pre-population for ungathered arrays"
+   write(iulog, *) "[zm_conv.F90] lengath", lengath
 
    ! GAR: populate the averaging and history arrays with initial values
    do i = 1, ncol
@@ -1079,7 +1080,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    write(iulog, *) "[zm_conv.F90] post-closure"
 
    ! GAR: populate the arrays with the iterand timestep da/dt values
-   do i = 1, ncol-1
+   do i = 1, ncol
       if (nstep .ge. histsteps) then
          ZM_dadt_hist(ideep(i), histsteps) = ZM_dadt_hist_g(i, histsteps)
       else
@@ -4079,7 +4080,11 @@ subroutine closure(lchnk   , &
       ! GAR: copy dltaa into work arrays
       ZM_dadt_hist_g(i, histsteps) = dltaa
       ZM_dadt_avg_g(i) = dltaa
+ 
+      write(iulog, *) "[zm_conv.F90] in-closure values for ZM_dadt_hist_g(i, histsteps):", ZM_dadt_hist_g(i, histsteps)
+      write(iulog, *) "[zm_conv.F90] in-closure values for ZM_dadt_avg_g(i, histsteps):", ZM_dadt_avg_g(i)
 
+ 
       if (dadt(i) /= 0._r8) mb(i) = max(dltaa/tau/dadt(i),0._r8)
       if (zm_microp .and. mx(i)-jt(i) < 2._r8) mb(i) =0.0_r8
    end do
