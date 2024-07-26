@@ -331,7 +331,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
                     aero    ,qi      ,dif     ,dnlf    ,dnif    , & 
                     dsf     ,dnsf    ,sprd    ,rice    ,frz     , &
                     mudpcu  ,lambdadpcu, microp_st, wuc, &
-                    msetrans, hmn, z, hu, hd, ZM_dadt_hist, ZM_dadt_avg)
+                    msetrans, hmn, z, hu, hd, ZM_dadt_hist, ZM_dadt_avg, histsteps)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -539,9 +539,13 @@ subroutine zm_convr(lchnk   ,ncol    , &
    ! GAR: ZM time averaging variable definitions
    real(r8), pointer, intent(inout), dimension(:,:) :: ZM_dadt_hist
    real(r8), intent(inout) :: ZM_dadt_avg(pcols)
+   integer, intent(in) :: histsteps
+   ! gathered arrays
+   real(r8) :: ZM_dadt_hist_g(pcols, histsteps)
+   real(r8) :: ZM_dadt_avg_g(pcols)
+   
    real(r8) :: dadt(pcols)
    integer nstep
-   integer histsteps
 
 !
 !-----------------------------------------------------------------------
@@ -671,8 +675,6 @@ subroutine zm_convr(lchnk   ,ncol    , &
 
    ! GAR: get current timestep
    nstep = get_nstep()
-   ! GAR: get size of history array time axis
-   histsteps = size(ZM_dadt_hist, dim=2)
    write(iulog, *) "[zm_conv.F90] size of time axis in ZM_dadt_hist:", histsteps
 !
 !--------------------------Data statements------------------------------
@@ -891,6 +893,8 @@ subroutine zm_convr(lchnk   ,ncol    , &
      end if
    end do
 
+   write(iulog, *) "[zm_conv.F90] pre-population for ungathered arrays"
+
    ! GAR: populate the averaging and history arrays with initial values
    do i = 1, ncol
       do k = 1, histsteps
@@ -898,7 +902,6 @@ subroutine zm_convr(lchnk   ,ncol    , &
       end do
       ZM_dadt_avg(i) = 0.0_r8
    end do
-   
 
    if (lengath.eq.0) return
    do ii=1,lengath
@@ -1049,6 +1052,19 @@ subroutine zm_convr(lchnk   ,ncol    , &
          evpg (i,k) = evpg (i,k)* (zfg(i,k)-zfg(i,k+1))/dp(i,k)
       end do
    end do
+   
+   write(iulog, *) "[zm_conv.F90] pre-population for gathered arrays"
+
+   ! GAR: populate the gathered arrays
+   !      Here, we map from the pcol domain to the gathered domain
+   do i = 1, lengath
+      ZM_dadt_avg_g(i) = ZM_dadt_avg(ideep(i))
+      do k = 1, histsteps
+         ZM_dadt_hist_g(i, k) = ZM_dadt_hist(ideep(i), k)
+      end do
+   end do
+   
+   write(iulog, *) "[zm_conv.F90] pre-closure"
 
    call closure(lchnk   , &
                 qg      ,tg      ,pg      ,zg      ,sg      , &
@@ -1059,15 +1075,17 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 lclg    ,lelg    ,jt      ,maxg    ,1       , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
                 msg     ,capelmt_wk, dadt )
+   
+   write(iulog, *) "[zm_conv.F90] post-closure"
 
    ! GAR: populate the arrays with the iterand timestep da/dt values
    do i = 1, ncol-1
       if (nstep .ge. histsteps) then
-         ZM_dadt_hist(i, histsteps) = dadt(i)
+         ZM_dadt_hist(ideep(i), histsteps) = dadt(i)
       else
-         ZM_dadt_hist(i, nstep) = dadt(i)
+         ZM_dadt_hist(ideep(i), nstep) = dadt(i)
       end if
-      ZM_dadt_avg(i) = dadt(i)
+      ZM_dadt_avg(ideep(i)) = dadt(i)
    end do
    
    write(iulog, *) "[zm_conv.F90] model timestep: ", nstep

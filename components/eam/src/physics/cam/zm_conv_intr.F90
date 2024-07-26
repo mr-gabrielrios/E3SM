@@ -1047,7 +1047,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
                     lengath ,ql      ,rliq  ,landfrac,  &
                     t_star, q_star, dcape, &  
                     aero(lchnk), qi, dif, dnlf, dnif, dsf, dnsf, sprd, rice, frz, mudpcu, &
-                    lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed, ZM_dadt_hist, ZM_dadt_avg)
+                    lambdadpcu,  microp_st, wuc, msetrans, msemn, elev, mseu, msed, ZM_dadt_hist, ZM_dadt_avg, histsteps)
 
    if (zm_microp) then
      dlftot(:ncol,:pver) = dlf(:ncol,:pver) + dif(:ncol,:pver) + dsf(:ncol,:pver)
