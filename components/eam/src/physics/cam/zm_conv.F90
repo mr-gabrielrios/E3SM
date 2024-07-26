@@ -1074,18 +1074,18 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 qlg     ,dsubcld ,mb      ,capeg   ,tlg     , &
                 lclg    ,lelg    ,jt      ,maxg    ,1       , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
-                msg     ,capelmt_wk, dadt )
+                msg     ,capelmt_wk, dadt, ZM_dadt_hist_g, ZM_dadt_avg_g, histsteps)
    
    write(iulog, *) "[zm_conv.F90] post-closure"
 
    ! GAR: populate the arrays with the iterand timestep da/dt values
    do i = 1, ncol-1
       if (nstep .ge. histsteps) then
-         ZM_dadt_hist(ideep(i), histsteps) = dadt(i)
+         ZM_dadt_hist(ideep(i), histsteps) = ZM_dadt_hist_g(i, histsteps)
       else
-         ZM_dadt_hist(ideep(i), nstep) = dadt(i)
+         ZM_dadt_hist(ideep(i), nstep) = ZM_dadt_hist_g(i, histsteps)
       end if
-      ZM_dadt_avg(ideep(i)) = dadt(i)
+      ZM_dadt_avg(ideep(i)) = ZM_dadt_avg_g(i)
    end do
    
    write(iulog, *) "[zm_conv.F90] model timestep: ", nstep
@@ -3863,7 +3863,7 @@ subroutine closure(lchnk   , &
                    ql      ,dsubcld ,mb      ,cape    ,tl      , &
                    lcl     ,lel     ,jt      ,mx      ,il1g    , &
                    il2g    ,rd      ,grav    ,cp      ,rl      , &
-                   msg     ,capelmt ,dadt )
+                   msg     ,capelmt ,dadt    ,ZM_dadt_hist_g, ZM_dadt_avg_g, histsteps )
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -3883,6 +3883,7 @@ subroutine closure(lchnk   , &
 ! 
 !-----------------------------------------------------------------------
    use dycore,    only: dycore_is, get_resolution
+   use time_manager, only: get_nstep 
 
    implicit none
 
@@ -3923,6 +3924,12 @@ subroutine closure(lchnk   , &
    integer, intent(in) :: jt(pcols)         ! top of updraft
    integer, intent(in) :: mx(pcols)         ! base of updraft
    real(r8), intent(out) :: dadt(pcols)
+  
+   ! GAR: addition of ZM time-averaging specific fields
+   integer, intent(in) :: histsteps
+   real(r8), intent(inout) :: ZM_dadt_hist_g(pcols, histsteps)
+   real(r8), intent(inout) :: ZM_dadt_avg_g(pcols)
+   integer nstep
 !
 !--------------------------Local variables------------------------------
 !
@@ -3951,6 +3958,10 @@ subroutine closure(lchnk   , &
 
    real(r8) rd
    real(r8) rl
+ 
+   ! GAR: get current model timestep
+   nstep = get_nstep()
+
 ! change of subcloud layer properties due to convection is
 ! related to cumulus updrafts and downdrafts.
 ! mc(z)=f(z)*mb, mub=betau*mb, mdb=betad*mb are used
@@ -4064,6 +4075,11 @@ subroutine closure(lchnk   , &
    end do
    do i = il1g,il2g
       dltaa = -1._r8* (cape(i)-capelmt)
+   
+      ! GAR: copy dltaa into work arrays
+      ZM_dadt_hist_g(i, histsteps) = dltaa
+      ZM_dadt_avg_g(i) = dltaa
+
       if (dadt(i) /= 0._r8) mb(i) = max(dltaa/tau/dadt(i),0._r8)
       if (zm_microp .and. mx(i)-jt(i) < 2._r8) mb(i) =0.0_r8
    end do
