@@ -540,6 +540,8 @@ subroutine zm_convr(lchnk   ,ncol    , &
    integer, intent(in) :: histsteps
    real(r8), intent(inout) :: ZM_dadt_hist(pcols, histsteps)
    real(r8), intent(inout) :: ZM_dadt_avg(pcols)
+   real(r8) :: ZM_dadt_container(pcols, histsteps)
+   integer :: include_previous_dcape(pcols)
    ! gathered arrays
    real(r8) :: ZM_dadt_hist_g(pcols, histsteps)
    real(r8) :: ZM_dadt_avg_g(pcols)
@@ -871,6 +873,24 @@ subroutine zm_convr(lchnk   ,ncol    , &
       capelmt_wk = 0.0_r8
 
    lengath = 0
+  
+   ! GAR: this is meant to populate the array `include_previous_dcape`, which flags cells 
+   !      that have seen positive CAPE tendency (dcape) within the backwards-facing averaging window
+   ! GAR: populate integer array 
+   do i = 1, ncol
+      include_previous_dcape(i) = 0 
+   end do
+   ! GAR: now, increment the array at the iterand index if positive dcape is detected
+   if (nstep .ge. histsteps) then
+      do i= 1, ncol
+         do k= 1, histsteps
+             if (ZM_dadt_hist(i, k) .ne. 0._r8) then
+                include_previous_dcape(i) = include_previous_dcape(i) + 1
+             end if
+         end do
+      end do
+   end if
+
    do i=1,ncol
      if (trigdcape_ull .or. trig_dcape_only) then
      ! DCAPE-ULL
@@ -884,6 +904,10 @@ subroutine zm_convr(lchnk   ,ncol    , &
            ! use constant 0 or a separate threshold for capt because capelmt is for default trigger
            lengath = lengath + 1
            index(lengath) = i
+       ! GAR: check if da/dt value from previous timestep is nonzero
+       else if (include_previous_dcape(i) > 0) then
+           lengath = lengath + 1
+           index(lengath) = i
        endif
      else
       if (cape(i) > capelmt) then
@@ -893,15 +917,46 @@ subroutine zm_convr(lchnk   ,ncol    , &
      end if
    end do
 
+   ! GAR: Update the averaging array using the "shifting method"
+   ! In other words, in an array with n averaging timesteps, the values in timesteps 2:n
+   ! will be shifted to a new container at timesteps 1:n-1, then popped back into the original array
+   ! at timesteps 1:n-1
+   if (nstep > histsteps) then
+      do i = 1, ncol
+         do k = 1, histsteps
+            ! If the iterand timestep (k) is less than the number of averaging timesteps,
+            ! pull the next timestep (k+1) from the averaging array to the container iterand timestep (k)
+            if (k < histsteps) then
+               write(iulog, *) "[zm_conv.F90] k < histsteps at nstep = ", nstep, "with histsteps = ", histsteps
+               ZM_dadt_container(i, k) = ZM_dadt_hist(i, k+1)
+            ! Else, populate with 0         
+            else
+               write(iulog, *) "[zm_conv.F90] k == histsteps at nstep = ", nstep, "with histsteps = ", histsteps
+               ZM_dadt_container(i, k) = 0._r8
+            end if
+         end do
+      end do  
+      ! Now, update the averaging array with the shifted values
+      do i = 1, ncol
+         do k = 1, histsteps
+            ZM_dadt_hist(i, k) = ZM_dadt_container(i, k)
+         end do
+      end do
+   else
+      do i = 1, ncol
+         ZM_dadt_hist(i, nstep) = 0._r8
+      end do
+   end if
+
    write(iulog, *) "[zm_conv.F90] pre-population for ungathered arrays"
    write(iulog, *) "[zm_conv.F90] lengath", lengath
 
    ! GAR: populate the averaging and history arrays with initial values
    do i = 1, ncol
-      do k = 1, histsteps
-         ZM_dadt_hist(i, k) = 0.0_r8
-      end do
       ZM_dadt_avg(i) = 0.0_r8
+      ! do k = 1, histsteps
+      !     ZM_dadt_hist(i, k) = 0._r8
+      ! end do
    end do
 
    if (lengath.eq.0) return
@@ -1080,7 +1135,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    write(iulog, *) "[zm_conv.F90] post-closure"
 
    ! GAR: populate the arrays with the iterand timestep da/dt values
-   do i = 1, ncol
+   do i = 1, lengath
       if (nstep .ge. histsteps) then
          ZM_dadt_hist(ideep(i), histsteps) = ZM_dadt_hist_g(i, histsteps)
       else
@@ -4080,6 +4135,11 @@ subroutine closure(lchnk   , &
       ! GAR: copy dltaa into work arrays
       ZM_dadt_hist_g(i, histsteps) = dltaa
       ZM_dadt_avg_g(i) = dltaa
+
+      if (nstep .ge. histsteps) then
+         ZM_dadt_avg_g(i) = sum(ZM_dadt_hist_g(i, 1:histsteps))/histsteps
+         dltaa = ZM_dadt_avg_g(i) 
+      end if
  
       write(iulog, *) "[zm_conv.F90] in-closure values for ZM_dadt_hist_g(i, histsteps):", ZM_dadt_hist_g(i, histsteps)
       write(iulog, *) "[zm_conv.F90] in-closure values for ZM_dadt_avg_g(i, histsteps):", ZM_dadt_avg_g(i)
