@@ -2899,6 +2899,18 @@ Relaxation time in ZM deep convection scheme.
 Default: set by build-namelist
 </entry>
 
+<entry id="zmconv_use_avg_time" type="logical" category="conv"
+       group="phys_ctl_nl" valid_values="" >
+Eanble time-averaging in ZM deep convection scheme.
+Default: set by build-namelist
+</entry>
+
+<entry id="zmconv_avg_time_s" type="real" category="conv"
+       group="phys_ctl_nl" valid_values="" >
+Averaging time in ZM deep convection scheme, in units of seconds.
+Default: set by build-namelist
+</entry>
+
 <entry id="zmconv_dmpdz" type="real" category="conv"
        group="zmconv_nl" valid_values="" >
 Parcel fractional mass entrainment rate

@@ -170,6 +170,10 @@ logical, public, protected :: use_gw_front = .false.
 ! Convective
 logical, public, protected :: use_gw_convect = .false.
 
+! GAR: add options for ZM time averaging scheme for physics control
+logical, public, protected :: zmconv_use_avg_time = .false.
+real(r8) :: zmconv_avg_time_s = 3600.0_r8
+
 !GW energy fix
 logical, public, protected :: use_gw_energy_fix = .false.
 
@@ -256,7 +260,7 @@ subroutine phys_ctl_readnl(nlfile)
       l_tracer_aero, l_vdiff, l_rayleigh, l_gw_drag, l_ac_energy_chk, &
       l_bc_energy_fix, l_dry_adj, l_st_mac, l_st_mic, l_rad, prc_coef1,prc_exp,prc_exp1,cld_sed,mg_prc_coeff_fix, &
       rrtmg_temp_fix, ideal_phys_option, &
-      modal_strat_sulfate_aod_treatment
+      modal_strat_sulfate_aod_treatment, zmconv_use_avg_time, zmconv_avg_time_s
    !-----------------------------------------------------------------------------
 
    if (masterproc) then
@@ -367,6 +371,8 @@ subroutine phys_ctl_readnl(nlfile)
    call mpibcast(use_gw_front,                    1 , mpilog,  0, mpicom)
    call mpibcast(use_gw_convect,                  1 , mpilog,  0, mpicom)
    call mpibcast(use_gw_energy_fix,              1 , mpilog,  0, mpicom)
+   call mpibcast(zmconv_use_avg_time,             1 , mpilog,  0, mpicom)
+   call mpibcast(zmconv_avg_time_s       ,        1 , mpir8,   0, mpicom)
    call mpibcast(fix_g1_err_ndrop,                1 , mpilog,  0, mpicom)
    call mpibcast(ssalt_tuning,                    1 , mpilog,  0, mpicom)
    call mpibcast(resus_fix,                       1 , mpilog,  0, mpicom)
@@ -611,7 +617,7 @@ subroutine phys_getopts(deep_scheme_out, shallow_scheme_out, eddy_scheme_out, &
                        ,l_tracer_aero_out, l_vdiff_out, l_rayleigh_out, l_gw_drag_out, l_ac_energy_chk_out  &
                        ,l_bc_energy_fix_out, l_dry_adj_out, l_st_mac_out, l_st_mic_out, l_rad_out  &
                        ,prc_coef1_out,prc_exp_out,prc_exp1_out, cld_sed_out,mg_prc_coeff_fix_out,rrtmg_temp_fix_out &
-                       ,modal_strat_sulfate_aod_treatment_out)
+                       ,modal_strat_sulfate_aod_treatment_out, zmconv_use_avg_time_out, zmconv_avg_time_s_out)
 
 !-----------------------------------------------------------------------
 ! Purpose: Return runtime settings
@@ -638,6 +644,8 @@ subroutine phys_getopts(deep_scheme_out, shallow_scheme_out, eddy_scheme_out, &
    logical,           intent(out), optional :: use_MMF_ESMT_out
    logical,           intent(out), optional :: use_crm_accel_out
    real(r8),          intent(out), optional :: crm_accel_factor_out
+   logical,           intent(out), optional :: zmconv_use_avg_time_out
+   real(r8),          intent(out), optional :: zmconv_avg_time_s_out
    logical,           intent(out), optional :: crm_accel_uv_out
    logical,           intent(out), optional :: use_subcol_microp_out
    logical,           intent(out), optional :: atm_dep_flux_out
@@ -738,6 +746,9 @@ subroutine phys_getopts(deep_scheme_out, shallow_scheme_out, eddy_scheme_out, &
    if ( present(use_MMF_VT_out          ) ) use_MMF_VT_out           = use_MMF_VT
    if ( present(MMF_VT_wn_max_out       ) ) MMF_VT_wn_max_out        = MMF_VT_wn_max
    if ( present(use_MMF_ESMT_out        ) ) use_MMF_ESMT_out         = use_MMF_ESMT
+   
+   if ( present(zmconv_use_avg_time_out       ) ) zmconv_use_avg_time_out = zmconv_use_avg_time
+   if ( present(zmconv_avg_time_s_out    ) ) zmconv_avg_time_s_out   = zmconv_avg_time_s
    
    if ( present(use_crm_accel_out       ) ) use_crm_accel_out        = use_crm_accel
    if ( present(crm_accel_factor_out    ) ) crm_accel_factor_out     = crm_accel_factor

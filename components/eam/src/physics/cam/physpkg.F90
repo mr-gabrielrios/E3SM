@@ -115,7 +115,8 @@ module physpkg
   logical :: history_gaschmbudget_2D ! output 2D gas chemistry tracer concentrations and tendencies
   logical :: history_gaschmbudget_2D_levels ! output 2D gas chemistry tracer concentrations and tendencies within certain layers
   logical :: history_chemdyg_summary
-
+  logical :: zmconv_use_avg_time
+  real(r8) :: zmconv_avg_time_s
   !======================================================================= 
 contains
 
@@ -177,6 +178,7 @@ subroutine phys_register
     use subcol_utils,       only: is_subcol_on
     use output_aerocom_aie, only: output_aerocom_aie_register, do_aerocom_ind3
     use mo_chm_diags,       only: chm_diags_inti_ac
+    use time_manager,       only: get_step_size
 
     !---------------------------Local variables-----------------------------
     !
@@ -184,7 +186,8 @@ subroutine phys_register
     integer  :: mm       ! constituent index 
     !-----------------------------------------------------------------------
 
-    integer :: histsteps = 5 ! GAR: temporary allocation definition
+    real(r8) :: model_dtime ! GAR: model timestep (seconds)
+    integer :: histsteps ! GAR: number of timesteps to average over
     integer :: nmodes
     character(len=16) :: spc_name
 
@@ -192,8 +195,8 @@ subroutine phys_register
                       macrop_scheme_out        = macrop_scheme,   &
                       microp_scheme_out        = microp_scheme,   &
                       cld_macmic_num_steps_out = cld_macmic_num_steps, &
-                      do_clubb_sgs_out         = do_clubb_sgs,     &
-		      do_shoc_sgs_out          = do_shoc_sgs, &
+                      do_clubb_sgs_out         = do_clubb_sgs, & 
+                      do_shoc_sgs_out          = do_shoc_sgs, &
                       do_aerocom_ind3_out      = do_aerocom_ind3,  &
                       use_subcol_microp_out    = use_subcol_microp, &
                       state_debug_checks_out   = state_debug_checks, &
@@ -203,7 +206,9 @@ subroutine phys_register
                       history_gaschmbudget_out = history_gaschmbudget, &
                    history_gaschmbudget_2D_out = history_gaschmbudget_2D, &
             history_gaschmbudget_2D_levels_out = history_gaschmbudget_2D_levels, &
-                   history_chemdyg_summary_out = history_chemdyg_summary )
+                   history_chemdyg_summary_out = history_chemdyg_summary, &
+                      zmconv_use_avg_time_out = zmconv_use_avg_time, &
+                      zmconv_avg_time_s_out = zmconv_avg_time_s )
 
     ! Initialize dyn_time_lvls
     call pbuf_init_time()
@@ -229,6 +234,21 @@ subroutine phys_register
     call pbuf_add_field('CLDICEINI', 'physpkg', dtype_r8, (/pcols,pver/), cldiceini_idx)
     call pbuf_add_field('static_ener_ac', 'global', dtype_r8, (/pcols/), static_ener_ac_idx)
     call pbuf_add_field('water_vap_ac',   'global', dtype_r8, (/pcols/), water_vap_ac_idx)
+    
+    ! GAR: add connection between user inputs and pbuf field addition for ZM time averaging
+    model_dtime = get_step_size() ! get model timestep (seconds)
+    if (zmconv_use_avg_time) then
+       histsteps = nint(zmconv_avg_time_s / model_dtime) ! round quotient to nearest int
+       write(iulog, *) "[phys_control.F90] time-averaging enabled, zm_avg_time_s", zmconv_avg_time_s, "with model_dtime", model_dtime, "and histsteps = ", histsteps
+    else
+       histsteps = 1 
+       write(iulog, *) "[phys_control.F90] time-averaging disabled, histsteps = ", histsteps
+    end if
+    ! GAR: catch for zero or negative histstep values
+    if (histsteps .le. 0) then
+       histsteps = 1
+       write(iulog, *) "[phys_control.F90] incorrect histsteps value entered, so time-averaging is disabled with histsteps = ", histsteps
+    end if
     call pbuf_add_field('DADT_AVG', 'physpkg', dtype_r8, (/pcols, histsteps/), ZM_dadt_hist_idx )
 
     ! check energy package

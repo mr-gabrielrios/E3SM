@@ -4019,6 +4019,8 @@ if ($cldfrc_rhminp and !($cfg->get('microphys') eq 'rk')) {
 add_default($nl, 'zmconv_c0_lnd');
 add_default($nl, 'zmconv_c0_ocn');
 add_default($nl, 'zmconv_ke');
+add_default($nl, 'zmconv_use_avg_time');
+add_default($nl, 'zmconv_avg_time_s');
 add_default($nl, 'zmconv_tau');
 add_default($nl, 'zmconv_tiedke_add');
 add_default($nl, 'zmconv_cape_cin');

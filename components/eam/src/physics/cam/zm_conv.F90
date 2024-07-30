@@ -537,11 +537,11 @@ subroutine zm_convr(lchnk   ,ncol    , &
    integer pbltg(pcols)          ! i row of pbl top indices.
 
    ! GAR: ZM time averaging variable definitions
-   integer, intent(in) :: histsteps
-   real(r8), intent(inout) :: ZM_dadt_hist(pcols, histsteps)
-   real(r8), intent(inout) :: ZM_dadt_avg(pcols)
-   real(r8) :: ZM_dadt_container(pcols, histsteps)
-   integer :: include_previous_dcape(pcols)
+   integer, intent(in) :: histsteps ! number of previous timesteps to average over
+   real(r8), intent(inout) :: ZM_dadt_hist(pcols, histsteps) ! 2D array holding CAPE tendency values over 'histsteps' previous timesteps
+   real(r8), intent(inout) :: ZM_dadt_avg(pcols) ! 1D array holding averaged CAPE tendency values for the current timestep
+   real(r8) :: ZM_dadt_container(pcols, histsteps) ! container array to hold values for ZM_dadt_hist during shifting
+   integer :: include_previous_dcape(pcols) ! integer array used to identify cells that had nonzero CAPE tendencies during previous 'histsteps' timesteps
    ! gathered arrays
    real(r8) :: ZM_dadt_hist_g(pcols, histsteps)
    real(r8) :: ZM_dadt_avg_g(pcols)
@@ -904,7 +904,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
            ! use constant 0 or a separate threshold for capt because capelmt is for default trigger
            lengath = lengath + 1
            index(lengath) = i
-       ! GAR: check if da/dt value from previous timestep is nonzero
+       ! GAR: check if da/dt value from previous timesteps are zero. If so, increment this array so the cells can included in averaging for this timestep.
        else if (include_previous_dcape(i) > 0) then
            lengath = lengath + 1
            index(lengath) = i
@@ -927,11 +927,9 @@ subroutine zm_convr(lchnk   ,ncol    , &
             ! If the iterand timestep (k) is less than the number of averaging timesteps,
             ! pull the next timestep (k+1) from the averaging array to the container iterand timestep (k)
             if (k < histsteps) then
-               write(iulog, *) "[zm_conv.F90] k < histsteps at nstep = ", nstep, "with histsteps = ", histsteps
                ZM_dadt_container(i, k) = ZM_dadt_hist(i, k+1)
             ! Else, populate with 0         
             else
-               write(iulog, *) "[zm_conv.F90] k == histsteps at nstep = ", nstep, "with histsteps = ", histsteps
                ZM_dadt_container(i, k) = 0._r8
             end if
          end do
@@ -942,14 +940,12 @@ subroutine zm_convr(lchnk   ,ncol    , &
             ZM_dadt_hist(i, k) = ZM_dadt_container(i, k)
          end do
       end do
+   ! Else, set iterand timestep values to 0
    else
       do i = 1, ncol
          ZM_dadt_hist(i, nstep) = 0._r8
       end do
    end if
-
-   write(iulog, *) "[zm_conv.F90] pre-population for ungathered arrays"
-   write(iulog, *) "[zm_conv.F90] lengath", lengath
 
    ! GAR: populate the averaging and history arrays with initial values
    do i = 1, ncol
