@@ -101,6 +101,7 @@ subroutine zm_conv_register
 ! Purpose: register fields with the physics buffer
 !----------------------------------------
 
+  use phys_control,   only: phys_getopts
   use physics_buffer, only : pbuf_add_field, dtype_r8
   use misc_diagnostics,only: dcape_diags_register
   use time_manager,       only: get_step_size
@@ -725,18 +726,12 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
   
 
    ! GAR: arrays for additional ZM diagnostics
-   real(r8), intent(out):: mu(pcols,pver)
    real(r8) :: msetrans(pcols,pver)            ! MSE vertical transport
    real(r8) :: msemn(pcols,pver)               ! Domain MSE
    real(r8) :: mseu(pcols,pver)                ! Updraft MSE
    real(r8) :: msed(pcols,pver)                ! Downdraft MSE
    real(r8) :: zm_t(pcols,pver)                ! Temperature used in ZM scheme
    real(r8) :: zm_q(pcols,pver)                ! Specific humidity used in ZM scheme 
-   real(r8), intent(out):: eu(pcols,pver)
-   real(r8), intent(out):: du(pcols,pver)
-   real(r8), intent(out):: md(pcols,pver)
-   real(r8), intent(out):: ed(pcols,pver)
-   real(r8), intent(out):: dp(pcols,pver)
 
    real(r8), pointer, dimension(:,:) :: zm_dadt_hist ! w holds time history of CAPE tendency from ZM
    real(r8) :: zm_dadt_hist_out(pcols)               ! initialize a local placeholder for this pointer to use for print outs

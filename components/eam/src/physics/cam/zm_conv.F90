@@ -14,6 +14,7 @@ module zm_conv
 !
 ! April 2021: X. Song added code for convective microphysics
 ! April 2022: X. Song added code for mass flux adjustment
+! Sept 2025: G. Rios (SNL/Princeton) added code for CAPE tendency time-averaging
 !---------------------------------------------------------------------------------
   use shr_kind_mod,    only: r8 => shr_kind_r8
   use spmd_utils,      only: masterproc
@@ -327,10 +328,11 @@ subroutine zm_convr(lchnk   ,ncol    , &
                     mu      ,md      ,du      ,eu      ,ed      , &
                     dp      ,dsubcld ,jt      ,maxg    ,ideep   , &
                     lengath ,ql      ,rliq    ,landfrac, &
-                    t_star  ,q_star, dcape,   &
+                    t_star  ,q_star  ,dcape   , &
                     aero    ,qi      ,dif     ,dnlf    ,dnif    , & 
                     dsf     ,dnsf    ,sprd    ,rice    ,frz     , &
-                    mudpcu  ,lambdadpcu, microp_st, wuc)
+                    mudpcu  ,lambdadpcu, microp_st, wuc, &
+                    msetrans, hmn, z, hu, hd, zm_dadt_hist, zm_dadt_avg, histsteps)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -350,7 +352,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
 ! 
 !-----------------------------------------------------------------------
    use phys_control, only: cam_physpkg_is
-   use time_manager, only: is_first_step 
+   use time_manager, only: get_nstep, is_first_step 
 !
 ! ************************ index of variables **********************
 !
@@ -500,7 +502,11 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8), intent(inout),optional :: wuc(pcols,pver) ! vertical velocity from ZMmp
 ! move these vars from local storage to output so that convective
 ! transports can be done in outside of conv_cam.
-   real(r8), intent(out) :: mu(pcols,pver)
+   real(r8), intent(out) :: msetrans(pcols,pver)   ! vertical MSE transport (credit: M. Waruszewski)
+   real(r8), intent(out) :: hmn(pcols,pver)        ! MSE derived from dycore fields
+   real(r8), intent(out) :: hu(pcols,pver)         ! Updraft MSE
+   real(r8), intent(out) :: hd(pcols,pver)         ! Downdraft MSE
+   real(r8), intent(out) :: mu(pcols,pver)         
    real(r8), intent(out) :: eu(pcols,pver)
    real(r8), intent(out) :: du(pcols,pver)
    real(r8), intent(out) :: md(pcols,pver)
@@ -512,6 +518,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8), intent(out) :: prec(pcols)
    real(r8), intent(out) :: rliq(pcols)   ! reserved liquid (not yet in cldliq) for energy integrals
    real(r8), intent(out) :: dcape(pcols)           ! output dynamical CAPE
+   real(r8), intent(out) :: z(pcols,pver)              ! w  grid slice of ambient mid-layer height in metres.
 
 
    real(r8) zs(pcols)
@@ -530,7 +537,18 @@ subroutine zm_convr(lchnk   ,ncol    , &
    integer pblt(pcols)           ! i row of pbl top indices.
    integer pbltg(pcols)          ! i row of pbl top indices.
 
-
+   ! GAR: ZM time averaging variable definitions
+   integer, intent(in) :: histsteps ! number of previous timesteps to average over
+   real(r8), intent(inout) :: zm_dadt_hist(pcols, histsteps) ! 2D array holding CAPE tendency values over 'histsteps' previous timesteps
+   real(r8), intent(inout) :: zm_dadt_avg(pcols) ! 1D array holding averaged CAPE tendency values for the current timestep
+   real(r8) :: zm_dadt_container(pcols, histsteps) ! container array to hold values for ZM_dadt_hist during shifting
+   integer :: include_previous_dcape(pcols) ! integer array used to identify cells that had nonzero CAPE tendencies during previous 'histsteps' timesteps
+   ! gathered arrays
+   real(r8) :: zm_dadt_hist_g(pcols, histsteps)
+   real(r8) :: zm_dadt_avg_g(pcols)
+   
+   real(r8) :: dadt(pcols)
+   integer nstep
 
 !
 !-----------------------------------------------------------------------
@@ -539,7 +557,6 @@ subroutine zm_convr(lchnk   ,ncol    , &
 !
    real(r8) q(pcols,pver)              ! w  grid slice of mixing ratio.
    real(r8) p(pcols,pver)              ! w  grid slice of ambient mid-layer pressure in mbs.
-   real(r8) z(pcols,pver)              ! w  grid slice of ambient mid-layer height in metres.
    real(r8) s(pcols,pver)              ! w  grid slice of scaled dry static energy (t+gz/cp).
    real(r8) tp(pcols,pver)             ! w  grid slice of parcel temperatures.
    real(r8) zf(pcols,pver+1)           ! w  grid slice of ambient interface height in metres.
@@ -604,7 +621,6 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8) su(pcols,pver)             ! wg grid slice of dry static energy in updraft.
    real(r8) qs(pcols,pver)             ! wg grid slice of saturation mixing ratio.
    real(r8) shat(pcols,pver)           ! wg grid slice of upper interface dry static energy.
-   real(r8) hmn(pcols,pver)            ! wg moist static energy.
    real(r8) hsat(pcols,pver)           ! wg saturated moist static energy.
    real(r8) qlg(pcols,pver)
    real(r8) dudt(pcols,pver)           ! wg u-wind tendency at gathered points.
@@ -660,6 +676,9 @@ subroutine zm_convr(lchnk   ,ncol    , &
 
    integer dcapemx(pcols)  ! launching level index saved from 1st call for CAPE calculation;  used in 2nd call when DCAPE-ULL active
 
+   ! GAR: get current timestep
+   nstep = get_nstep()
+   ! write(iulog, *) "[zm_conv.F90] size of time axis in ZM_dadt_hist:", histsteps, "currently on step:", nstep
 !
 !--------------------------Data statements------------------------------
 !
@@ -829,6 +848,9 @@ subroutine zm_convr(lchnk   ,ncol    , &
          dcapemx(:ncol) = maxi(:ncol)
       endif
 
+      ! GR: crude fix to populate dcape
+      dcape(:ncol) = 0._r8 
+
       !DCAPE-ULL
       if (.not. is_first_step() .and. (trigdcape_ull .or. trig_dcape_only)) then
          iclosure = .false.
@@ -855,6 +877,24 @@ subroutine zm_convr(lchnk   ,ncol    , &
       capelmt_wk = 0.0_r8
 
    lengath = 0
+  
+   ! GAR: this is meant to populate the array `include_previous_dcape`, which flags cells 
+   !      that have seen positive CAPE tendency (dcape) within the backwards-facing averaging window
+   ! GAR: populate integer array 
+   do i = 1, ncol
+      include_previous_dcape(i) = 0 
+   end do
+   ! GAR: now, increment the array at the iterand index if nonzero dcape is detected
+   if (nstep .ge. histsteps) then
+      do i= 1, ncol
+         do k= 1, histsteps
+             if (zm_dadt_hist(i, k) .ne. 0._r8) then
+                include_previous_dcape(i) = include_previous_dcape(i) + 1
+             end if
+         end do
+      end do
+   end if
+
    do i=1,ncol
      if (trigdcape_ull .or. trig_dcape_only) then
      ! DCAPE-ULL
@@ -868,6 +908,10 @@ subroutine zm_convr(lchnk   ,ncol    , &
            ! use constant 0 or a separate threshold for capt because capelmt is for default trigger
            lengath = lengath + 1
            index(lengath) = i
+       ! GAR: check if da/dt value from previous timesteps are zero. If so, increment this array so the cells can included in averaging for this timestep.
+       else if (include_previous_dcape(i) > 0) then
+           lengath = lengath + 1
+           index(lengath) = i
        endif
      else
       if (cape(i) > capelmt) then
@@ -876,12 +920,51 @@ subroutine zm_convr(lchnk   ,ncol    , &
       end if
      end if
    end do
-
+   
    if (lengath.eq.0) return
    do ii=1,lengath
       i=index(ii)
       ideep(ii)=i
    end do
+
+   ! GAR: Update the averaging array using the "shifting method"
+   ! In other words, in an array with n averaging timesteps, the values in timesteps 2:n
+   ! will be shifted to a new container at timesteps 1:n-1, then popped back into the original array
+   ! at timesteps 1:n-1
+   if (nstep .ge. histsteps) then
+      ! write(iulog, *) '[zm_conv.F90] timestep exceeds number of averaging steps'
+      do i = 1, ncol
+         do k = 1, histsteps
+            ! If the iterand timestep (k) is less than the number of averaging timesteps,
+            ! pull the next timestep (k+1) from the averaging array to the container iterand timestep (k)
+            if (k < histsteps) then
+               zm_dadt_container(i, k) = zm_dadt_hist(i, k+1)
+            ! Else, populate with 0         
+            else
+               zm_dadt_container(i, k) = 0._r8
+            end if
+         end do
+      end do  
+      ! Now, update the averaging array with the shifted values
+      do i = 1, ncol
+         do k = 1, histsteps
+            zm_dadt_hist(i, k) = zm_dadt_container(i, k)
+         end do
+      end do
+   ! Else, set iterand timestep values to 0
+   else
+      ! write(iulog, *) '[zm_conv.F90] timestep does not exceed number of averaging steps'
+      do i = 1, ncol
+        ! write(iulog, *) '[zm_conv.F90; shifting loop] nstep value:', nstep, 'size of zm_dadt_hist:', size(zm_dadt_hist)
+        zm_dadt_hist(i, nstep + 1) = 0._r8
+      end do
+   end if
+
+   ! GAR: populate the averaging and history arrays with initial values
+   do i = 1, ncol
+      zm_dadt_avg(i) = 0.0_r8
+   end do
+
 !
 ! obtain gathered arrays necessary for ensuing calculations.
 !
@@ -1007,7 +1090,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
                landfracg, tpertg, &  
                aero    ,qhat ,lambdadpcug,mudpcug ,sprdg   ,frzg ,  &
                qldeg   ,qideg   ,qsdeg   ,ncdeg   ,nideg   ,nsdeg,  &
-               dsfmg   ,dsfng   ,loc_microp_st )   
+               dsfmg   ,dsfng   ,loc_microp_st, msetrans, hu, hd)   
 
 
 !
@@ -1026,7 +1109,16 @@ subroutine zm_convr(lchnk   ,ncol    , &
          evpg (i,k) = evpg (i,k)* (zfg(i,k)-zfg(i,k+1))/dp(i,k)
       end do
    end do
-
+   
+   ! GAR: populate the gathered arrays
+   !      Here, we map from the pcol domain to the gathered domain
+   do i = 1, lengath
+      zm_dadt_avg_g(i) = zm_dadt_avg(ideep(i))
+      do k = 1, histsteps
+         zm_dadt_hist_g(i, k) = zm_dadt_hist(ideep(i), k)
+      end do
+   end do
+   
    call closure(lchnk   , &
                 qg      ,tg      ,pg      ,zg      ,sg      , &
                 tpg     ,qs      ,qu      ,su      ,mc      , &
@@ -1035,7 +1127,18 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 qlg     ,dsubcld ,mb      ,capeg   ,tlg     , &
                 lclg    ,lelg    ,jt      ,maxg    ,1       , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
-                msg     ,capelmt_wk )
+                msg     ,capelmt_wk, dadt, zm_dadt_hist_g, zm_dadt_avg_g, histsteps)
+   
+   ! GAR: populate the arrays with the iterand timestep da/dt values
+   do i = 1, lengath
+      if (nstep .ge. histsteps) then
+         zm_dadt_hist(ideep(i), histsteps) = zm_dadt_hist_g(i, histsteps)
+      else
+         zm_dadt_hist(ideep(i), nstep + 1) = zm_dadt_hist_g(i, histsteps)
+      end if
+      zm_dadt_avg(ideep(i)) = zm_dadt_avg_g(i)
+   end do
+   
 !
 ! limit cloud base mass flux to theoretical upper bound.
 !
@@ -1074,20 +1177,20 @@ subroutine zm_convr(lchnk   ,ncol    , &
 
    do k=msg+1,pver
       do i=1,lengath
-         mu   (i,k)  = mu   (i,k)*mb(i)
-         md   (i,k)  = md   (i,k)*mb(i)
-         mc   (i,k)  = mc   (i,k)*mb(i)
-         du   (i,k)  = du   (i,k)*mb(i)
-         eu   (i,k)  = eu   (i,k)*mb(i)
-         ed   (i,k)  = ed   (i,k)*mb(i)
-         cmeg (i,k)  = cmeg (i,k)*mb(i)
-         rprdg(i,k)  = rprdg(i,k)*mb(i)
-         cug  (i,k)  = cug  (i,k)*mb(i)
-         evpg (i,k)  = evpg (i,k)*mb(i)
-         pflxg(i,k+1)= pflxg(i,k+1)*mb(i)*100._r8/grav
-         sprdg(i,k)  = sprdg(i,k)*mb(i)
-         frzg(i,k)   = frzg(i,k)*mb(i)
-
+         mu   (i,k)     = mu   (i,k)*mb(i)
+         md   (i,k)     = md   (i,k)*mb(i)
+         mc   (i,k)     = mc   (i,k)*mb(i)
+         du   (i,k)     = du   (i,k)*mb(i)
+         eu   (i,k)     = eu   (i,k)*mb(i)
+         ed   (i,k)     = ed   (i,k)*mb(i)
+         cmeg (i,k)     = cmeg (i,k)*mb(i)
+         rprdg(i,k)     = rprdg(i,k)*mb(i)
+         cug  (i,k)     = cug  (i,k)*mb(i)
+         evpg (i,k)     = evpg (i,k)*mb(i)
+         pflxg(i,k+1)   = pflxg(i,k+1)*mb(i)*100._r8/grav
+         sprdg(i,k)     = sprdg(i,k)*mb(i)
+         frzg(i,k)      = frzg(i,k)*mb(i)
+         msetrans(i,k)  = msetrans(i,k)*mb(i)
 
          if ( zm_microp .and. mb(i).eq.0._r8) then
             qlg (i,k) = 0._r8
@@ -2642,7 +2745,7 @@ subroutine buoyan(lchnk   ,ncol    , &
                     (1._r8+qstp(i,k)/eps1)*eps1**2*rl*rl/ &
                     (rd**2*tp(i,k)**4)-qstp(i,k)* &
                     (1._r8+qstp(i,k)/eps1)*2._r8*eps1*rl/ &
-                    (rd*tp(i,k)**3))
+                   (rd*tp(i,k)**3))
             a1(i) = 1._r8/a1(i)
             a2(i) = -a2(i)*a1(i)**3
             y(i) = q(i,mx(i)) - qstp(i,k)
@@ -2746,7 +2849,7 @@ subroutine cldprp(lchnk   , &
                   landfrac,tpertg  , &
                   aero    ,qhat ,lambdadpcu ,mudpcu  ,sprd   ,frz1 , &
                   qcde    ,qide   ,qsde     ,ncde    ,nide   ,nsde , &
-                  dsfm    ,dsfn   ,loc_microp_st )
+                  dsfm    ,dsfn   ,loc_microp_st, msetrans, hu, hd)
 
 !----------------------------------------------------------------------- 
 ! 
@@ -2813,9 +2916,12 @@ subroutine cldprp(lchnk   , &
    real(r8), intent(out) :: ed(pcols,pver)       ! entrainment rate of downdraft
    real(r8), intent(out) :: eu(pcols,pver)       ! entrainment rate of updraft
    real(r8), intent(out) :: hmn(pcols,pver)      ! moist stat energy of env
+   real(r8), intent(out) :: hu(pcols,pver)       ! moist stat energy of env associated with updrafts
+   real(r8), intent(out) :: hd(pcols,pver)       ! moist stat energy of env associated with downdrafts
    real(r8), intent(out) :: hsat(pcols,pver)     ! sat moist stat energy of env
    real(r8), intent(out) :: mc(pcols,pver)       ! net mass flux
    real(r8), intent(out) :: md(pcols,pver)       ! downdraft mass flux
+   real(r8), intent(out) :: msetrans(pcols,pver) ! vertical MSE transport
    real(r8), intent(out) :: mu(pcols,pver)       ! updraft mass flux
    real(r8), intent(out) :: pflx(pcols,pverp)    ! precipitation flux thru layer
    real(r8), intent(out) :: qd(pcols,pver)       ! spec humidity of downdraft
@@ -2824,6 +2930,8 @@ subroutine cldprp(lchnk   , &
    real(r8), intent(out) :: qu(pcols,pver)       ! spec hum of updraft
    real(r8), intent(out) :: sd(pcols,pver)       ! normalized dry stat energy of downdraft
    real(r8), intent(out) :: su(pcols,pver)       ! normalized dry stat energy of updraft
+
+
 
    ! Convective microphysics
    type(zm_microp_st)  :: loc_microp_st ! state and tendency of convective microphysics
@@ -2854,8 +2962,6 @@ subroutine cldprp(lchnk   , &
    real(r8) gamma(pcols,pver)
    real(r8) dz(pcols,pver)
    real(r8) iprm(pcols,pver)
-   real(r8) hu(pcols,pver)
-   real(r8) hd(pcols,pver)
    real(r8) eps(pcols,pver)
    real(r8) f(pcols,pver)
    real(r8) k1(pcols,pver)
@@ -3089,6 +3195,10 @@ subroutine cldprp(lchnk   , &
          end if
       end do
    end do
+
+   ! do k=1,msg
+   !   h_domain_avg(k) = sum(hmn(:, k))/real(size(hmn, dim=1))
+   ! end do
 !
 !jr Set to zero things which make this routine blow up
 !
@@ -3744,6 +3854,12 @@ subroutine cldprp(lchnk   , &
          mc(i,k) = mu(i,k) + md(i,k)
       end do
    end do
+
+   do k = msg + 1,pver
+      do i = 1,il2g
+         msetrans(i,k) = mu(i,k) * (hu(i, k) - hmn(i, k)) + md(i,k) * (hd(i, k) - hmn(i, k))
+      end do
+   end do
 !
    do i = 1,il2g
      if ( zm_microp .and. jt(i)>=jlcl(i)) then
@@ -3796,7 +3912,8 @@ subroutine closure(lchnk   , &
                    ql      ,dsubcld ,mb      ,cape    ,tl      , &
                    lcl     ,lel     ,jt      ,mx      ,il1g    , &
                    il2g    ,rd      ,grav    ,cp      ,rl      , &
-                   msg     ,capelmt )
+                   msg     ,capelmt ,dadt    ,                   &
+                   zm_dadt_hist_g   ,zm_dadt_avg_g    ,histsteps )
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -3816,6 +3933,7 @@ subroutine closure(lchnk   , &
 ! 
 !-----------------------------------------------------------------------
    use dycore,    only: dycore_is, get_resolution
+   use time_manager, only: get_nstep 
 
    implicit none
 
@@ -3855,6 +3973,13 @@ subroutine closure(lchnk   , &
    integer, intent(in) :: lel(pcols)        ! index of launch leve
    integer, intent(in) :: jt(pcols)         ! top of updraft
    integer, intent(in) :: mx(pcols)         ! base of updraft
+   real(r8), intent(out) :: dadt(pcols)
+  
+   ! GAR: addition of ZM time-averaging specific fields
+   integer, intent(in) :: histsteps
+   real(r8), intent(inout) :: zm_dadt_hist_g(pcols, histsteps)
+   real(r8), intent(inout) :: zm_dadt_avg_g(pcols)
+   integer nstep
 !
 !--------------------------Local variables------------------------------
 !
@@ -3870,7 +3995,6 @@ subroutine closure(lchnk   , &
    real(r8) beta
    real(r8) capelmt
    real(r8) cp
-   real(r8) dadt(pcols)
    real(r8) debdt
    real(r8) dltaa
    real(r8) eb
@@ -3884,6 +4008,10 @@ subroutine closure(lchnk   , &
 
    real(r8) rd
    real(r8) rl
+ 
+   ! GAR: get current model timestep
+   nstep = get_nstep()
+
 ! change of subcloud layer properties due to convection is
 ! related to cumulus updrafts and downdrafts.
 ! mc(z)=f(z)*mb, mub=betau*mb, mdb=betad*mb are used
@@ -3997,6 +4125,20 @@ subroutine closure(lchnk   , &
    end do
    do i = il1g,il2g
       dltaa = -1._r8* (cape(i)-capelmt)
+   
+      ! GAR: copy dltaa into work arrays
+      zm_dadt_hist_g(i, histsteps) = dltaa
+      zm_dadt_avg_g(i) = dltaa
+
+      if (nstep .ge. histsteps) then
+         zm_dadt_avg_g(i) = sum(zm_dadt_hist_g(i, 1:histsteps))/histsteps
+         dltaa = zm_dadt_avg_g(i) 
+      end if
+ 
+      ! write(iulog, *) "[zm_conv.F90] in-closure values for ZM_dadt_hist_g(i, histsteps):", zm_dadt_hist_g(i, histsteps)
+      ! write(iulog, *) "[zm_conv.F90] in-closure values for ZM_dadt_avg_g(i, histsteps):", zm_dadt_avg_g(i)
+
+ 
       if (dadt(i) /= 0._r8) mb(i) = max(dltaa/tau/dadt(i),0._r8)
       if (zm_microp .and. mx(i)-jt(i) < 2._r8) mb(i) =0.0_r8
    end do
