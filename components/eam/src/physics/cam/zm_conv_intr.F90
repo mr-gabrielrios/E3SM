@@ -79,6 +79,9 @@ module zm_conv_intr
    integer  ::    mudpcu_idx       = 0
    integer  ::    icimrdp_idx      = 0
 
+   integer  :: zm_dadt_hist_idx    = 0 ! GAR: add index for ZM CAPE tendency memory
+
+   integer  :: histsteps               ! GAR: number of timesteps to average CAPE tendency over 
 
    logical :: old_snow  = .true.   ! set true to use old estimate of snow production in zm_conv_evap
                                    ! set false to use snow production from zm
@@ -100,10 +103,17 @@ subroutine zm_conv_register
 
   use physics_buffer, only : pbuf_add_field, dtype_r8
   use misc_diagnostics,only: dcape_diags_register
+  use time_manager,       only: get_step_size
 
   implicit none
 
+  ! GAR: addition of variarbles to support ZM time-averaging
+  logical  :: zmconv_use_avg_time ! boolean to switch time-averaging
+  real(r8) :: zmconv_avg_time_s  ! number of seconds to average over
+  real(r8) :: model_dtime ! model timestep (seconds)
+
   integer idx
+
 
 ! Flux of precipitation from deep convection (kg/m2/s)
    call pbuf_add_field('DP_FLXPRC','global',dtype_r8,(/pcols,pverp/),dp_flxprc_idx) 
@@ -148,6 +158,31 @@ subroutine zm_conv_register
       call pbuf_add_field('DSFZM', 'physpkg', dtype_r8, (/pcols,pver/), dsfzm_idx)
        
    end if
+
+
+   ! GAR: add CAPE tendency (`dadt`) averaging array to buffer to persist over physics timesteps
+
+   ! Add namelist control from phys_control() to determine physics buffer
+   ! entry size for ZM time-averaging arrays
+   call phys_getopts(zmconv_use_avg_time_out = zmconv_use_avg_time, &
+                     zmconv_avg_time_s_out = zmconv_avg_time_s)
+
+   ! Get model timestep
+   model_dtime = get_step_size() ! get model timestep (seconds)
+   if (zmconv_use_avg_time) then
+      histsteps = nint(zmconv_avg_time_s / model_dtime) ! round quotient to nearest int
+      ! write(iulog, *) "[phys_control.F90] time-averaging enabled, zm_avg_time_s", zmconv_avg_time_s, "with model_dtime", model_dtime, "and histsteps = ", histsteps
+   else
+      histsteps = 1
+      ! write(iulog, *) "[phys_control.F90] time-averaging disabled, histsteps = ", histsteps
+   end if
+   ! GAR: catch for zero or negative histstep values
+   if (histsteps .le. 0) then
+      histsteps = 1
+      ! write(iulog, *) "[phys_control.F90] incorrect histsteps value entered, so time-averaging is disabled with histsteps = ", histsteps
+   end if
+
+   call pbuf_add_field('DADT_AVG', 'physpkg', dtype_r8, (/pcols, histsteps/), zm_dadt_hist_idx )
 
 ! Variables for dCAPE diagnosis and decomposition
 
@@ -204,6 +239,16 @@ subroutine zm_conv_init(pref_edge)
 ! Register fields with the output buffer
 !
 
+    ! GR: add field definitions for output diagnostics
+    call addfld ('ZMMSETRANS',(/ 'lev' /), 'A','J/m2/s','ZM transport of MSE')
+    call addfld ('ZMMSE',(/ 'lev' /), 'A','J/kg','ZM MSE')
+    call addfld ('ZMMSEU',(/ 'lev' /), 'A','J/kg','ZM updraft MSE')
+    call addfld ('ZMMSED',(/ 'lev' /), 'A','J/kg','ZM downdraft MSE')
+    call addfld ('MSE',(/ 'lev' /), 'A','J/kg','dycore-derived MSE')
+    call addfld ('ZM_T',(/ 'lev' /), 'A','K','ZM temperature')
+    call addfld ('ZM_Q',(/ 'lev' /), 'A','kg/kg','ZM specific humidity')
+    call addfld ('ZM_DADT', horiz_only, 'A','J/kg/s','ZM CAPE tendency pre-conditioned, no averaging')
+    call addfld ('ZM_DADT_AVG', horiz_only, 'A','J/kg/s','ZM CAPE tendency pre-conditioned, averaged')
 
     call addfld ('PRECZ',horiz_only,    'A','m/s','total precipitation from ZM convection')
     call addfld ('ZMDT',(/ 'lev' /), 'A','K/s','T tendency - Zhang-McFarlane moist convection')
@@ -450,6 +495,9 @@ subroutine zm_conv_init(pref_edge)
     mudpcu_idx      = pbuf_get_index('MUDPCU')
     icimrdp_idx     = pbuf_get_index('ICIMRDP')
 
+    ! GAR: retrieve physics buffer index for CAPE tendency history array
+    zm_dadt_hist_idx = pbuf_get_index('DADT_AVG')
+
     ! Initialization for the microphysics
     if (zm_microp) then
 
@@ -674,7 +722,27 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8), intent(out):: md(pcols,pver) 
    real(r8), intent(out):: ed(pcols,pver) 
    real(r8), intent(out):: dp(pcols,pver) 
-   
+  
+
+   ! GAR: arrays for additional ZM diagnostics
+   real(r8), intent(out):: mu(pcols,pver)
+   real(r8) :: msetrans(pcols,pver)            ! MSE vertical transport
+   real(r8) :: msemn(pcols,pver)               ! Domain MSE
+   real(r8) :: mseu(pcols,pver)                ! Updraft MSE
+   real(r8) :: msed(pcols,pver)                ! Downdraft MSE
+   real(r8) :: zm_t(pcols,pver)                ! Temperature used in ZM scheme
+   real(r8) :: zm_q(pcols,pver)                ! Specific humidity used in ZM scheme 
+   real(r8), intent(out):: eu(pcols,pver)
+   real(r8), intent(out):: du(pcols,pver)
+   real(r8), intent(out):: md(pcols,pver)
+   real(r8), intent(out):: ed(pcols,pver)
+   real(r8), intent(out):: dp(pcols,pver)
+
+   real(r8), pointer, dimension(:,:) :: zm_dadt_hist ! w holds time history of CAPE tendency from ZM
+   real(r8) :: zm_dadt_hist_out(pcols)               ! initialize a local placeholder for this pointer to use for print outs
+   real(r8) :: zm_dadt_avg(pcols)                    ! holds averaged CAPE tendency values
+   integer :: histsteps
+
    ! wg layer thickness in mbs (between upper/lower interface).
    real(r8), intent(out):: dsubcld(pcols) 
    
@@ -752,7 +820,12 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    real(r8) :: cape(pcols)        ! w  convective available potential energy.
    real(r8) :: mu_out(pcols,pver)
    real(r8) :: md_out(pcols,pver)
-
+   real(r8) :: msetrans_out(pcols,pver) ! Output array for vertical MSE transport
+   real(r8) :: msezm_out(pcols,pver)    ! Output array for ZM MSE
+   real(r8) :: mse_out(pcols,pver)      ! Output array for derived MSE
+   real(r8) :: mseu_out(pcols,pver)     ! Output array for updraft MSE
+   real(r8) :: msed_out(pcols,pver)     ! Output array for downdraft MSE
+   real(r8) :: elev(pcols,pver)         ! Height
 
    ! used in momentum transport calculation
    real(r8) :: winds(pcols, pver, 2)
@@ -912,6 +985,12 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    dlftot(:,:) = 0._r8
    wind_tends(:ncol,:pver,:) = 0.0_r8
 
+   msetrans_out(:,:) = 0._r8
+   msezm_out(:,:) = 0._r8
+   mse_out(:,:) = 0._r8
+   mseu_out(:,:) = 0._r8
+   msed_out(:,:) = 0._r8
+
    call physics_state_copy(state,state1)             ! copy state to local state1.
 
    lq(:) = .FALSE.
@@ -950,6 +1029,11 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    call pbuf_get_field(pbuf, icimrdp_idx,     qi )
    call pbuf_get_field(pbuf, dlfzm_idx,  dlf)
    call pbuf_get_field(pbuf, difzm_idx,  dif)
+
+   ! GAR: ZM time averaging
+   call pbuf_get_field(pbuf, zm_dadt_hist_idx, zm_dadt_hist)   
+   histsteps = size(zm_dadt_hist, dim=2) ! ensure number of averaging timesteps is the size of the time axis of the array
+   ! write(iulog, *) '[zm_conv_intr.F90] size of zm_dadt_hist = ', size(zm_dadt_hist)
 
    if (zm_microp) then
       call pbuf_get_field(pbuf, dnlfzm_idx, dnlf)
@@ -1009,7 +1093,8 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
                     lengath ,ql      ,rliq  ,landfrac,  &
                     t_star, q_star, dcape, &  
                     aero(lchnk), qi, dif, dnlf, dnif, dsf, dnsf, sprd, rice, frz, mudpcu, &
-                    lambdadpcu,  microp_st, wuc)
+                    lambdadpcu,  microp_st, wuc, &
+                    msetrans, msemn, elev, mseu, msed, zm_dadt_hist, zm_dadt_avg, histsteps)
 
    if (zm_microp) then
      dlftot(:ncol,:pver) = dlf(:ncol,:pver) + dif(:ncol,:pver) + dsf(:ncol,:pver)
@@ -1157,6 +1242,22 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
 
    call outfld('DCAPE', dcape, pcols, lchnk)
    call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
+
+   ! GAR: add outputs for ZM time-averaging diagnostics
+   call outfld('DCAPE', dcape, pcols, lchnk)
+   call outfld('CAPE_ZM', cape, pcols, lchnk)        ! RBN - CAPE output
+   ! GAR: add outputs for ZM time averaging diagnostics.
+   call outfld('ZM_DADT_AVG', zm_dadt_avg, pcols, lchnk)
+   ! GAR: slice at the most recent timestep
+   if (nstep .ge. histsteps) then
+      call outfld('ZM_DADT', zm_dadt_hist(:ncol, histsteps), pcols, lchnk)
+      call outfld('ZM_DADT', zm_dadt_hist(:, histsteps), pcols, lchnk)
+   else
+      call outfld('ZM_DADT', zm_dadt_hist(:ncol, nstep), pcols, lchnk)
+      call outfld('ZM_DADT', zm_dadt_hist(:, nstep), pcols, lchnk)
+   end if
+
+
 !
 ! Output fractional occurance of ZM convection
 !
@@ -1179,9 +1280,32 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
          ii = ideep(i)
          mu_out(ii,k) = mu(i,k) * 100._r8/gravit
          md_out(ii,k) = md(i,k) * 100._r8/gravit
+         ! GAR: get additional ZM diagnostics
+         msetrans_out(ii,k) = msetrans(i,k) * 100._r8/gravit
+         ! GAR: note that approximation for latent heat of vaporization at constant temperature is used
+         msezm_out(ii, k) = cpair*state%t(ii, k) + 2500000*state%q(ii, k, 1) + gravit*elev(ii,k)
       end do
    end do
 
+   ! GAR: add additional diagnostics for ZM time-averaging
+   do i=1,ncol
+      do k=1,pver
+         ! mseu_out(i,k) = mseu(i,k)
+         ! msed_out(i,k) = msed(i,k)
+         mse_out(i,k) = cpair*state%t(i, k) + 2500000*state%q(i, k, 1) + gravit*elev(i,k)
+      end do
+   end do
+
+   zm_q(:ncol,:pver) = state%q(:ncol,:pver,1)
+   zm_t(:ncol,:pver) = state%t(:ncol,:pver)
+
+   call outfld('ZMMSETRANS', msetrans_out,      pcols, lchnk)
+   call outfld('ZMMSE', msezm_out, pcols, lchnk)
+   call outfld('ZMMSEU', mseu_out, pcols, lchnk)
+   call outfld('ZMMSED', msed_out, pcols, lchnk)
+   call outfld('MSE',  mse_out,      pcols, lchnk)
+   call outfld('ZM_T', zm_t,      pcols, lchnk)
+   call outfld('ZM_Q', zm_q,      pcols, lchnk)   
 
    if(convproc_do_aer .or. convproc_do_gas) then 
       call outfld('ZMMU', mu_out,      pcols, lchnk)
