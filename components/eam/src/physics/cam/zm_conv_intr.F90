@@ -183,7 +183,7 @@ subroutine zm_conv_register
       ! write(iulog, *) "[phys_control.F90] incorrect histsteps value entered, so time-averaging is disabled with histsteps = ", histsteps
    end if
 
-   call pbuf_add_field('DADT_AVG', 'physpkg', dtype_r8, (/pcols, histsteps/), zm_dadt_hist_idx )
+   call pbuf_add_field('ZM_DADT_AVG', 'physpkg', dtype_r8, (/pcols, histsteps/), zm_dadt_hist_idx )
 
 ! Variables for dCAPE diagnosis and decomposition
 
@@ -497,7 +497,7 @@ subroutine zm_conv_init(pref_edge)
     icimrdp_idx     = pbuf_get_index('ICIMRDP')
 
     ! GAR: retrieve physics buffer index for CAPE tendency history array
-    zm_dadt_hist_idx = pbuf_get_index('DADT_AVG')
+    zm_dadt_hist_idx = pbuf_get_index('ZM_DADT_AVG')
 
     ! Initialization for the microphysics
     if (zm_microp) then
@@ -1028,7 +1028,7 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    ! GAR: ZM time averaging
    call pbuf_get_field(pbuf, zm_dadt_hist_idx, zm_dadt_hist)   
    histsteps = size(zm_dadt_hist, dim=2) ! ensure number of averaging timesteps is the size of the time axis of the array
-   ! write(iulog, *) '[zm_conv_intr.F90] size of zm_dadt_hist = ', size(zm_dadt_hist)
+   write(iulog, *) '[zm_conv_intr.F90] size of zm_dadt_hist = ', size(zm_dadt_hist)
 
    if (zm_microp) then
       call pbuf_get_field(pbuf, dnlfzm_idx, dnlf)
@@ -1246,13 +1246,10 @@ subroutine zm_conv_tend(pblh    ,mcon    ,cme     , &
    ! GAR: slice at the most recent timestep
    if (nstep .ge. histsteps) then
       call outfld('ZM_DADT', zm_dadt_hist(:ncol, histsteps), pcols, lchnk)
-      call outfld('ZM_DADT', zm_dadt_hist(:, histsteps), pcols, lchnk)
    else
-      call outfld('ZM_DADT', zm_dadt_hist(:ncol, nstep), pcols, lchnk)
-      call outfld('ZM_DADT', zm_dadt_hist(:, nstep), pcols, lchnk)
+      call outfld('ZM_DADT', zm_dadt_hist(:ncol, nstep + 1), pcols, lchnk)
    end if
-
-
+   
 !
 ! Output fractional occurance of ZM convection
 !

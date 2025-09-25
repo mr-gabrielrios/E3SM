@@ -679,6 +679,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    ! GAR: get current timestep
    nstep = get_nstep()
    ! write(iulog, *) "[zm_conv.F90] size of time axis in ZM_dadt_hist:", histsteps, "currently on step:", nstep
+
 !
 !--------------------------Data statements------------------------------
 !
@@ -882,43 +883,49 @@ subroutine zm_convr(lchnk   ,ncol    , &
    !      that have seen positive CAPE tendency (dcape) within the backwards-facing averaging window
    ! GAR: populate integer array 
    do i = 1, ncol
-      include_previous_dcape(i) = 0 
+      include_previous_dcape(i) = 0._r8 
    end do
    ! GAR: now, increment the array at the iterand index if nonzero dcape is detected
    if (nstep .ge. histsteps) then
-      do i= 1, ncol
-         do k= 1, histsteps
-             if (zm_dadt_hist(i, k) .ne. 0._r8) then
-                include_previous_dcape(i) = include_previous_dcape(i) + 1
-             end if
-         end do
+      do i = 1, ncol
+         ! write(iulog, *) '[zm_conv.F90] include_previous_dcape check for nonzero values:', zm_dadt_hist(i, :)
+         if (sum(zm_dadt_hist(i, :)) .ne. 0) then
+            include_previous_dcape(i) = 1
+         end if
+         ! do k = 1, histsteps
+         !     if (zm_dadt_hist(i, k) .ne. 0._r8) then
+         !        include_previous_dcape(i) = include_previous_dcape(i) + 1
+         !     end if
+         ! end do
       end do
    end if
 
    do i=1,ncol
      if (trigdcape_ull .or. trig_dcape_only) then
      ! DCAPE-ULL
-      if (is_first_step()) then
+         if (is_first_step()) then
          !Will this cause restart to be non-BFB
-           if (cape(i) > capelmt) then
-              lengath = lengath + 1
-              index(lengath) = i
-           end if
-       else if (cape(i) > 0.0_r8 .and. dcape(i) > trigdcapelmt) then
-           ! use constant 0 or a separate threshold for capt because capelmt is for default trigger
-           lengath = lengath + 1
-           index(lengath) = i
-       ! GAR: check if da/dt value from previous timesteps are zero. If so, increment this array so the cells can included in averaging for this timestep.
-       else if (include_previous_dcape(i) > 0) then
-           lengath = lengath + 1
-           index(lengath) = i
-       endif
+             if (cape(i) > capelmt) then
+                 lengath = lengath + 1
+                 index(lengath) = i
+             end if
+         else if (cape(i) > 0.0_r8 .and. dcape(i) > trigdcapelmt) then
+             ! use constant 0 or a separate threshold for capt because capelmt is for default trigger
+             lengath = lengath + 1
+             index(lengath) = i
+         end if
      else
-      if (cape(i) > capelmt) then
-         lengath = lengath + 1
-         index(lengath) = i
-      end if
+         if ((cape(i) > capelmt) .or. (include_previous_dcape(i) > 0)) then
+             lengath = lengath + 1
+             index(lengath) = i
+         end if
      end if
+     
+     ! GAR: check if da/dt value from previous timesteps are zero. If so, increment this array so the cells can included in averaging for this timestep.
+     ! if (include_previous_dcape(i) > 0) then
+     !     lengath = lengath + 1
+     !     index(lengath) = i
+     ! endif
    end do
    
    if (lengath.eq.0) return
@@ -938,7 +945,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
             ! If the iterand timestep (k) is less than the number of averaging timesteps,
             ! pull the next timestep (k+1) from the averaging array to the container iterand timestep (k)
             if (k < histsteps) then
-               zm_dadt_container(i, k) = zm_dadt_hist(i, k+1)
+               zm_dadt_container(i, k) = zm_dadt_hist(i, k + 1)
             ! Else, populate with 0         
             else
                zm_dadt_container(i, k) = 0._r8
@@ -962,7 +969,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
 
    ! GAR: populate the averaging and history arrays with initial values
    do i = 1, ncol
-      zm_dadt_avg(i) = 0.0_r8
+      zm_dadt_avg(i) = 0._r8
    end do
 
 !
@@ -1109,7 +1116,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
          evpg (i,k) = evpg (i,k)* (zfg(i,k)-zfg(i,k+1))/dp(i,k)
       end do
    end do
-   
+  
    ! GAR: populate the gathered arrays
    !      Here, we map from the pcol domain to the gathered domain
    do i = 1, lengath
@@ -1128,7 +1135,16 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 lclg    ,lelg    ,jt      ,maxg    ,1       , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
                 msg     ,capelmt_wk, dadt, zm_dadt_hist_g, zm_dadt_avg_g, histsteps)
-   
+  
+   do i = 1, ncol
+      if (nstep .ge. histsteps) then
+         zm_dadt_hist(i, histsteps) = dadt(i)
+      else
+         zm_dadt_hist(i, nstep + 1) = dadt(i)
+      end if
+      zm_dadt_avg(i) = dadt(i)
+   end do
+ 
    ! GAR: populate the arrays with the iterand timestep da/dt values
    do i = 1, lengath
       if (nstep .ge. histsteps) then
@@ -4134,10 +4150,6 @@ subroutine closure(lchnk   , &
          zm_dadt_avg_g(i) = sum(zm_dadt_hist_g(i, 1:histsteps))/histsteps
          dltaa = zm_dadt_avg_g(i) 
       end if
- 
-      ! write(iulog, *) "[zm_conv.F90] in-closure values for ZM_dadt_hist_g(i, histsteps):", zm_dadt_hist_g(i, histsteps)
-      ! write(iulog, *) "[zm_conv.F90] in-closure values for ZM_dadt_avg_g(i, histsteps):", zm_dadt_avg_g(i)
-
  
       if (dadt(i) /= 0._r8) mb(i) = max(dltaa/tau/dadt(i),0._r8)
       if (zm_microp .and. mx(i)-jt(i) < 2._r8) mb(i) =0.0_r8
